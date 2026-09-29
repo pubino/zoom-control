@@ -64,10 +64,15 @@ jobs:
           OUT: ${{ github.workspace }}/dist
         run: agent/scripts/package-unsigned.zsh
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Build zoomctl wheel
         run: |
-          python3 -m pip install --quiet build
-          python3 -m build --wheel --outdir dist ctl
+          python -m venv "$RUNNER_TEMP/build-venv"
+          "$RUNNER_TEMP/build-venv/bin/pip" install --quiet build
+          "$RUNNER_TEMP/build-venv/bin/python" -m build --wheel --outdir dist ctl
 
       - name: Checksums
         run: cd dist && shasum -a 256 * > SHA256SUMS && cat SHA256SUMS
