@@ -29,20 +29,40 @@ runner_home() { print -- "$(dscl . -read "/Users/$RUNNER_USER" NFSHomeDirectory 
 
 runner_arch() { [[ "$(uname -m)" == arm64 ]] && print arm64 || print x64; }
 
+# Install roomagent from a release: a signed+notarized .pkg, or a notarized .zip of the
+# Developer ID-signed binary. Unsigned builds are refused (TCC grants would not stick).
+# EXPECTED_TEAM_ID (optional) pins the signing team.
 install_roomagent() {
-  local version="$1" tmp
+  local version="$1" tmp v="${1#v}"
   tmp="$(mktemp -d)"
   info "downloading roomagent $version from $PUBLIC_REPO"
-  run gh release download "$version" -R "$PUBLIC_REPO" -p 'roomagent-*.pkg' -p SHA256SUMS -D "$tmp"
-  if [[ "$DRY_RUN" != 1 ]]; then
-    local pkg=("$tmp"/roomagent-*.pkg(N))
-    (( ${#pkg} == 1 )) || die "expected one roomagent pkg in release $version"
-    [[ "$pkg[1]" != *UNSIGNED* ]] || die "release $version has only an UNSIGNED pkg; refusing to deploy"
-    (cd "$tmp" && grep "$(basename "$pkg[1]")" SHA256SUMS | shasum -a 256 -c -) || die "checksum mismatch"
-    spctl --assess --type install "$pkg[1]" || die "pkg failed Gatekeeper assessment"
-    run sudo installer -pkg "$pkg[1]" -target /
-    /usr/local/bin/roomagent --version >/dev/null || die "roomagent did not install"
-    ok "roomagent $(/usr/local/bin/roomagent --version) installed"
+  run gh release download "$version" -R "$PUBLIC_REPO" -p 'roomagent-*' -p SHA256SUMS -D "$tmp"
+  if [[ "$DRY_RUN" == 1 ]]; then rm -rf "$tmp"; return 0; fi
+
+  (cd "$tmp" && for f in roomagent-*(N); do grep " $f\$" SHA256SUMS; done | shasum -a 256 -c -) \
+    || die "checksum mismatch"
+  local pkg="$tmp/roomagent-$v.pkg" zip="$tmp/roomagent-$v-macos.zip" staged
+  if [[ -f "$pkg" ]]; then
+    spctl --assess --type install "$pkg" || die "pkg failed Gatekeeper assessment"
+    run sudo installer -pkg "$pkg" -target /
+  elif [[ -f "$zip" ]]; then
+    ditto -x -k "$zip" "$tmp/x"
+    staged="$tmp/x/roomagent"
+    codesign --verify --strict "$staged" || die "roomagent signature invalid"
+    codesign -dvv "$staged" 2>&1 | grep -q "Authority=Developer ID Application" \
+      || die "roomagent is not Developer ID signed; refusing to deploy"
+    spctl --assess --type open --context context:primary-signature "$staged" 2>/dev/null \
+      || warn "Gatekeeper could not confirm notarization (offline?)"
+    run sudo install -d -m 755 /usr/local/bin
+    run sudo install -m 755 "$staged" /usr/local/bin/roomagent
+  else
+    die "release $version has no signed roomagent (found: $(ls "$tmp" | tr '\n' ' '))"
   fi
+  if [[ -n "${EXPECTED_TEAM_ID:-}" ]]; then
+    codesign -dvv /usr/local/bin/roomagent 2>&1 | grep -q "TeamIdentifier=$EXPECTED_TEAM_ID" \
+      || die "installed roomagent is not signed by team $EXPECTED_TEAM_ID"
+  fi
+  [[ "$(/usr/local/bin/roomagent --version)" == "$v" ]] || die "installed roomagent version != $v"
+  ok "roomagent $v installed"
   rm -rf "$tmp"
 }

@@ -20,6 +20,7 @@ RUN /opt/venv/bin/pip install -e './ctl[dev]'
 COPY ctl/tests ctl/tests
 COPY examples examples
 COPY schemas schemas
+COPY agent/Sources/RoomAgentCore/Report.swift agent/Sources/RoomAgentCore/Report.swift
 RUN chown -R app /src
 USER app
 WORKDIR /src/ctl

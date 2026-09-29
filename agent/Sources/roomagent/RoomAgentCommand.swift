@@ -30,7 +30,12 @@ protocol ReportingCommand: ParsableCommand {
 
 extension ReportingCommand {
     func run() throws {
-        let r = report(Commands(env: MacEnvironment.make()))
+        let env: AgentEnvironment
+        do { env = try MacEnvironment.make() } catch {
+            print(Report(command: Self._commandName, checks: [], error: "\(error)").json(pretty: output.pretty))
+            throw ExitCode(2)
+        }
+        let r = report(Commands(env: env))
         print(r.json(pretty: output.pretty))
         if r.exitCode != 0 { throw ExitCode(r.exitCode) }
     }
@@ -42,7 +47,7 @@ struct RoomAgentCommand: ParsableCommand {
         abstract: "macOS room node agent for zoom-control. Emits one JSON report per command.",
         version: roomAgentVersion,
         subcommands: [Preflight.self, Launch.self, Share.self, SelectAV.self, Health.self, Quit.self,
-                      Devices.self, AXDump.self]
+                      Devices.self, Calibrate.self, UIStrings.self, AXDump.self]
     )
 }
 
@@ -116,6 +121,45 @@ struct Devices: ReportingCommand {
     }
 }
 
+struct Calibrate: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Check Zoom UI strings against a live test meeting (run once not sharing, once with --sharing).")
+    @Flag(help: "You are currently sharing a screen in the test meeting") var sharing = false
+    @OptionGroup var output: OutputFlags
+
+    func run() throws {
+        let r: Report
+        do {
+            let (strings, source) = try ZoomUIStrings.load()
+            let observed = try MacZoomUI(strings: strings).observe()
+            r = calibrationReport(observed, strings: strings, source: source, expectSharing: sharing)
+        } catch {
+            r = Report(command: "calibrate", checks: [], error: "\(error)")
+        }
+        print(r.json(pretty: output.pretty))
+        if r.exitCode != 0 { throw ExitCode(r.exitCode) }
+    }
+}
+
+struct UIStrings: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "ui-strings",
+        abstract: "Print the effective Zoom UI strings as JSON (copy to ui-strings.json to override).")
+
+    func run() throws {
+        do {
+            let (strings, source) = try ZoomUIStrings.load()
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            FileHandle.standardError.write(Data("# source: \(source)\n".utf8))
+            print(String(decoding: try enc.encode(strings), as: UTF8.self))
+        } catch {
+            print(Report(command: "ui-strings", checks: [], error: "\(error)").json())
+            throw ExitCode(2)
+        }
+    }
+}
+
 struct AXDump: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "ax-dump",
                                                     abstract: "Dump Zoom's Accessibility tree to calibrate UI strings.")
@@ -123,7 +167,7 @@ struct AXDump: ParsableCommand {
 
     func run() throws {
         do {
-            let tree = try MacZoomUI().dump(depth: depth)
+            let tree = try MacZoomUI(strings: try ZoomUIStrings.load().0).dump(depth: depth)
             let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted, .sortedKeys])
             print(String(decoding: data, as: UTF8.self))
         } catch {

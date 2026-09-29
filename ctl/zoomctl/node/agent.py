@@ -64,7 +64,7 @@ class Report:
 
 class Agent(Protocol):
     def preflight(self, room: Room) -> Report: ...
-    def launch(self, start_url: str) -> Report: ...
+    def launch(self, start_url: str, mode: str = "zoommtg") -> Report: ...
     def share(self, room: Room) -> Report: ...
     def select_av(self, room: Room) -> Report: ...
     def health(self, room: Room) -> Report: ...
@@ -115,9 +115,9 @@ class RoomAgentCLI:
     def preflight(self, room: Room) -> Report:
         return self._run("preflight", room_args(room))
 
-    def launch(self, start_url: str) -> Report:
+    def launch(self, start_url: str, mode: str = "zoommtg") -> Report:
         # URL carries a ZAK token: pass on stdin, never argv (visible in `ps`).
-        return self._run("launch", ["--start-url-stdin"], stdin=start_url + "\n")
+        return self._run("launch", ["--start-url-stdin", "--mode", mode], stdin=start_url + "\n")
 
     def share(self, room: Room) -> Report:
         return self._run("share", room_args(room))

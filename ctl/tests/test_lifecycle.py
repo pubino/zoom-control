@@ -42,13 +42,15 @@ class FakeAgent:
         self.quit_ok = quit_ok
         self.calls = []
         self.urls = []
+        self.modes = []
 
     def preflight(self, room):
         self.calls.append("preflight")
         return self.preflight_q.pop(0) if len(self.preflight_q) > 1 else self.preflight_q[0]
 
-    def launch(self, url):
+    def launch(self, url, mode="zoommtg"):
         self.calls.append("launch")
+        self.modes.append(mode)
         self.urls.append(url)
         return self.launch_q.pop(0) if self.launch_q else rep("launch")
 
@@ -223,3 +225,13 @@ def test_agent_crash_inside_lifecycle_still_tears_down(ctx):
     res, notes, _, zoom = run(ctx, agent)
     assert res.outcome is Outcome.FAILED and "lifecycle crashed" in res.error
     assert zoom.ended == 1 and agent.calls[-1] == "quit"
+
+
+def test_room_launch_mode_is_passed_to_agent(config_dir):
+    p = config_dir / "rooms" / "room-101.yaml"
+    p.write_text(p.read_text() + "  launch_mode: https\n")
+    cfg = load_config(config_dir)
+    ev = cfg.event("cs101-guest-2026-09-10")
+    agent = FakeAgent()
+    run((ev, cfg.room_for(ev)), agent)
+    assert agent.modes == ["https"]

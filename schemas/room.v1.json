@@ -53,6 +53,16 @@
         "av": {
           "$ref": "#/$defs/AVRouting"
         },
+        "launch_mode": {
+          "default": "zoommtg",
+          "description": "How roomagent opens the start_url: zoommtg:// client scheme (default) or https via zoom.us.app",
+          "enum": [
+            "zoommtg",
+            "https"
+          ],
+          "title": "Launch Mode",
+          "type": "string"
+        },
         "runner_label": {
           "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
           "title": "Runner Label",

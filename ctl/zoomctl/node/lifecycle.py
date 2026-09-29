@@ -217,7 +217,7 @@ class Lifecycle:
                 self.notifier.send(Level.WARN, f"start_url fetch failed (attempt {attempt})", str(exc))
                 self.clock.sleep(10 * attempt)
                 continue
-            launched = self.agent.launch(url)
+            launched = self.agent.launch(url, self.room.spec.launch_mode)
             if not launched.ok:
                 self.result.error = f"launch failed: {launched.summary()}"
                 self.notifier.send(Level.WARN, f"launch failed (attempt {attempt})", launched.summary())

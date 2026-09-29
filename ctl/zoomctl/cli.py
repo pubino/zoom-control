@@ -67,6 +67,34 @@ def validate(config: ConfigOpt = Path(".")) -> None:
 
 
 @app.command()
+def check(config: ConfigOpt = Path("."),
+          test_alert: Annotated[bool, typer.Option(help="Also send a test message to ALERT_WEBHOOK_URL")] = False
+          ) -> None:
+    """Verify Zoom credentials, scopes, and each room host's webinar license."""
+    from .doctor import FAIL, check as run_check
+
+    cfg = _load(config)
+    findings = run_check(cfg, _zoom())
+    for f in findings:
+        typer.echo(f.line())
+    failed = any(f.status == FAIL for f in findings)
+    if test_alert:
+        notifier = WebhookNotifier.from_env("zoomctl check")
+        if not notifier.url:
+            typer.echo("✗ ALERT_WEBHOOK_URL is not set", err=True)
+            failed = True
+        else:
+            notifier.send(Level.INFO, "test alert — zoom-control can reach this channel")
+            if notifier.failures:
+                typer.echo(f"✗ alert webhook: {notifier.failures[-1]}", err=True)
+                failed = True
+            else:
+                typer.echo("✓ alert webhook accepted the test message")
+    if failed:
+        raise typer.Exit(1)
+
+
+@app.command()
 def schema(out: Annotated[Path, typer.Option(help="Directory to write JSON Schemas")] = Path("schemas"),
            check: Annotated[bool, typer.Option(help="Fail if files differ instead of writing")] = False) -> None:
     """Export (or --check) the JSON Schemas for room and event specs."""

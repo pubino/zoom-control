@@ -18,7 +18,7 @@ jobs:
     name: zoomctl tests (Docker)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker compose build test
       - run: docker compose run --rm test
 
@@ -26,7 +26,7 @@ jobs:
     name: RoomAgentCore tests (Linux, Docker)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker compose build test-swift
       - run: docker compose run --rm test-swift
 
@@ -34,7 +34,7 @@ jobs:
     name: roomagent build + tests (macOS)
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: agent/scripts/test.zsh
       - run: agent/scripts/build.zsh release
       - name: CLI contract smoke test
@@ -53,7 +53,7 @@ jobs:
     name: setup-zoomctl action
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: setup
         uses: ./.github/actions/setup-zoomctl
       - run: |
@@ -62,9 +62,14 @@ jobs:
           zoomctl dispatch --help >/dev/null
 
   lint-scripts:
-    name: zsh syntax
+    name: zsh scripts
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - run: for f in agent/scripts/*.zsh node/*.zsh scripts/*.zsh; do zsh -n "$f" && echo "ok $f"; done
+      - uses: actions/checkout@v5
+      - run: for f in agent/scripts/*.zsh node/*.zsh scripts/*.zsh scripts/lib/*.zsh scripts/tests/*.zsh; do zsh -n "$f" && echo "ok $f"; done
+      - name: Release helper tests
+        run: scripts/tests/release-lib.test.zsh
+      - name: Release prerequisite check reports problems (no identities on CI)
+        run: |
+          if scripts/release.zsh --check; then echo "::error::--check passed without signing identities"; exit 1; fi
       - run: plutil -lint mdm/*.mobileconfig mdm/*.plist

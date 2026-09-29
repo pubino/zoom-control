@@ -50,6 +50,7 @@ def test_start_url_goes_via_stdin_not_argv(tmp_path):
     assert RoomAgentCLI(binary).launch("https://zoom.us/s/1?zak=SECRET").ok
     text = log.read_text()
     assert "SECRET" not in text.splitlines()[0] and "stdin: https://zoom.us/s/1?zak=SECRET" in text
+    assert "--mode zoommtg" in text.splitlines()[0]
 
 
 def test_crash_with_no_output_is_failure(tmp_path):

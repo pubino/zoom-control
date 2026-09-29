@@ -32,7 +32,7 @@ zoom-control-config (private)                     zoom-control (this repo, publi
 | [`node/`](node) | zsh bootstrap / update / teardown for room Macs |
 | [`mdm/`](mdm) | PPPC profile + Zoom managed-preferences templates |
 | [`schemas/`](schemas) | JSON Schemas for room/event YAML (editor validation) |
-| [`docs/`](docs) | [architecture](docs/architecture.md) · [node setup](docs/node-setup.md) · [security](docs/security.md) · [runbook](docs/runbook.md) |
+| [`docs/`](docs) | [architecture](docs/architecture.md) · [Zoom setup](docs/zoom-setup.md) · [node setup](docs/node-setup.md) · [calibration](docs/calibration.md) · [releasing](docs/releasing.md) · [security](docs/security.md) · [runbook](docs/runbook.md) |
 
 ## Quick start (development)
 
@@ -52,14 +52,13 @@ docker-compose run --rm test-swift   # RoomAgentCore tests on Linux
 
 ## Deploying
 
-1. Create a Zoom **Server-to-Server OAuth** app with admin scopes to list, read, create, update,
-   delete and change the status of webinars (classic `webinar:read:admin`, `webinar:write:admin`,
-   or the equivalent granular scopes in the Zoom Marketplace UI).
-   Each room's `zoom_host` needs a Webinar license.
-2. Create the private config repo from [`examples/config`](examples/config) and add secrets
-   `ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ALERT_WEBHOOK_URL`.
-3. Provision each Mac with [`node/bootstrap.zsh`](node/bootstrap.zsh) — see [docs/node-setup.md](docs/node-setup.md).
-4. Add events by PR. Review the plan comment, merge, done.
+1. **Release** a signed, notarized build from your Mac: `scripts/release.zsh 0.1.1 --config-repo ../zoom-control-config`
+   ([docs/releasing.md](docs/releasing.md)).
+2. **Zoom + alerts**: create the Server-to-Server OAuth app and webhook, then verify and store the secrets with
+   `scripts/set-config-secrets.zsh` ([docs/zoom-setup.md](docs/zoom-setup.md)).
+3. **Nodes**: provision each Mac with `node/bootstrap.zsh` ([docs/node-setup.md](docs/node-setup.md)), then do the
+   one-time [calibration](docs/calibration.md) (privacy approvals, Zoom UI strings, launch mode).
+4. **Events**: add them by PR in the config repo. Review the plan comment, merge, done.
 
 ## License
 

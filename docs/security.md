@@ -17,7 +17,10 @@
 |---|---|---|
 | `ZOOM_ACCOUNT_ID` / `ZOOM_CLIENT_ID` / `ZOOM_CLIENT_SECRET` | validate, reconcile, run-event, manual-* | S2S OAuth app. Scope it to webinar read/write/status only. |
 | `ALERT_WEBHOOK_URL` | all | Slack-compatible `{"text": …}` incoming webhook |
-| `DEVELOPER_ID_*`, `APPLE_*` | public repo `release` environment | Only exposed to tag builds via environment protection |
+
+Signing keys and notarization credentials never leave the release manager's Mac: releases are
+cut locally with `scripts/release.zsh` ([releasing.md](releasing.md)), and CI only *verifies* published
+assets.
 
 Secrets reach a room node only for the duration of a job. The `start_url` (which contains a ZAK
 host token) goes to `roomagent` **on stdin**, never argv, and is redacted in all output.

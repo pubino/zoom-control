@@ -24,15 +24,12 @@ unsigned builds), and registers a GitHub Actions runner labelled `macOS,room-101
 config repo only**, running as a LaunchAgent in `av-runner`'s GUI session. The runner's `.env` pins
 `ZOOMCTL_ROOM=room-101`, so the node refuses events for other rooms.
 
-## 3. One-time privacy approvals
+## 3. One-time privacy approvals and calibration
 
-Log in as `av-runner` (or let auto-login do it) and follow [security.md](security.md): deploy the PPPC
-profile, then approve Camera, Microphone and Screen Recording once for `roomagent` and `zoom.us`.
-The fastest way to trigger every prompt:
-
-```zsh
-roomagent preflight --video-device "<name>" --audio-device "<name>" --display "<name>" --pretty
-```
+Deploy the PPPC profile ([security.md](security.md)), then work through
+**[calibration.md](calibration.md)** as `av-runner`. It covers the Camera, Microphone and Screen
+Recording approvals, checking Zoom's UI strings with `roomagent calibrate`, choosing the launch
+mode, and verifying Zoom's managed preferences.
 
 ## 4. Discover device names → room YAML
 
@@ -47,8 +44,7 @@ and allows a unique substring, but exact is best).
 
 * Deploy `mdm/us.zoom.config.plist` (verify its keys against Zoom's current docs first).
 * Launch zoom.us once as `av-runner` and dismiss any first-run dialogs.
-* Calibrate UI strings if Zoom changed them: start a test meeting, then `roomagent ax-dump > ax.json`
-  and compare with `ZoomUIStrings` in `agent/Sources/RoomAgentMac/Zoom.swift`.
+* Calibrate UI strings and launch mode: [calibration.md](calibration.md) §2–3.
 
 ## 6. Verify end to end
 

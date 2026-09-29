@@ -48,6 +48,10 @@ class RoomSpec(_Strict):
     zoom_host: str = Field(description="Zoom user (email or id) that hosts this room's webinars")
     av: AVRouting
     thresholds: Thresholds = Thresholds()
+    launch_mode: Literal["zoommtg", "https"] = Field(
+        default="zoommtg",
+        description="How roomagent opens the start_url: zoommtg:// client scheme (default) or https via zoom.us.app",
+    )
 
     @field_validator("timezone")
     @classmethod

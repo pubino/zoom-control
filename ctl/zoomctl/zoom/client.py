@@ -124,6 +124,14 @@ class ZoomClient:
                 pass
         self._sleep(delay)
 
+    # ----------------------------------------------------------------- users
+
+    def get_user(self, user: str) -> dict[str, Any]:
+        return self.request("GET", f"/users/{user}")
+
+    def get_user_settings(self, user: str) -> dict[str, Any]:
+        return self.request("GET", f"/users/{user}/settings")
+
     # -------------------------------------------------------------- webinars
 
     def list_webinars(self, user: str) -> Iterator[dict[str, Any]]:

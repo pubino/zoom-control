@@ -1,0 +1,74 @@
+name: Verify release
+# Releases are cut locally with scripts/release.zsh (local Developer ID + notarytool).
+# This workflow independently checks what was published. It fails loudly on unsigned or
+# un-notarized builds, checksum mismatches, or version drift.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag: { description: "Release tag to verify (e.g. v0.1.1)", required: true }
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with: { ref: "${{ github.event.release.tag_name || inputs.tag }}" }
+
+      - name: Versions in the tagged source match the tag
+        run: |
+          source scripts/lib/release.zsh
+          check_versions "${TAG#v}"
+        shell: zsh {0}
+
+      - name: Download assets
+        run: gh release download "$TAG" -D assets && ls -l assets
+
+      - name: Checksums
+        run: cd assets && shasum -a 256 -c SHA256SUMS
+
+      - name: roomagent is Developer ID signed and notarized
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          v="${TAG#v}"
+          work="$(mktemp -d)"
+          if [[ -f "assets/roomagent-$v.pkg" ]]; then
+            pkgutil --check-signature "assets/roomagent-$v.pkg" | tee "$work/sig"
+            grep -q "Developer ID Installer" "$work/sig"
+            xcrun stapler validate "assets/roomagent-$v.pkg"
+            spctl --assess --type install -vv "assets/roomagent-$v.pkg"
+            pkgutil --expand-full "assets/roomagent-$v.pkg" "$work/pkg"
+            bin="$(find "$work/pkg" -type f -name roomagent -perm -u+x | head -1)"
+          elif [[ -f "assets/roomagent-$v-macos.zip" ]]; then
+            ditto -x -k "assets/roomagent-$v-macos.zip" "$work/zip"
+            bin="$work/zip/roomagent"
+            spctl --assess --type open --context context:primary-signature -vv "$bin" 2>&1 | tee "$work/spctl"
+            grep -q "Notarized Developer ID" "$work/spctl"
+          else
+            echo "::error::no roomagent-$v.pkg or roomagent-$v-macos.zip in release"; exit 1
+          fi
+          [[ -x "$bin" ]] || { echo "::error::roomagent binary not found in artifact"; exit 1; }
+          codesign --verify --strict --verbose=2 "$bin"
+          codesign -dvv "$bin" 2>&1 | grep -q "Authority=Developer ID Application" \
+            || { echo "::error::roomagent is not Developer ID signed"; exit 1; }
+          got="$("$bin" --version)"
+          [[ "$got" == "$v" ]] || { echo "::error::roomagent --version is $got, expected $v"; exit 1; }
+          req="$(codesign -dr - "$bin" 2>&1 | sed -n 's/^designated => //p')"
+          [[ "$req" == "$(cat "assets/roomagent-$v.requirement")" ]] \
+            || { echo "::error::published .requirement does not match the binary"; exit 1; }
+          echo "✓ roomagent $got: $req" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: zoomctl wheel installs and reports the version
+        run: |
+          python3 -m venv "$RUNNER_TEMP/v"
+          "$RUNNER_TEMP/v/bin/pip" install -q "assets/zoomctl-${TAG#v}-py3-none-any.whl"
+          test "$("$RUNNER_TEMP/v/bin/zoomctl" version)" = "${TAG#v}"
+          "$RUNNER_TEMP/v/bin/zoomctl" validate -c examples/config

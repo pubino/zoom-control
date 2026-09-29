@@ -19,7 +19,7 @@ jobs:
     environment: ${{ inputs.room }}
     timeout-minutes: 720
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
         with:
           require-roomagent: "true"

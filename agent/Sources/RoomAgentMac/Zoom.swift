@@ -109,21 +109,11 @@ struct AX {
     }
 }
 
-/// UI strings Zoom exposes via Accessibility. Zoom changes these between releases —
-/// verify with `roomagent ax-dump` on the room node and update here if needed.
-public enum ZoomUIStrings {
-    public static let meetingWindowTitles = ["Zoom Meeting", "Zoom Webinar", "Zoom Workplace Meeting"]
-    public static let meetingMenu = "Meeting"
-    public static let startShareItems = ["Share Screen", "Start Share", "Share screen"]
-    public static let stopShareItems = ["Stop Share", "Stop share", "Stop Sharing"]
-    public static let shareToolbarWindows = ["zoom share toolbar window", "zoom share statusbar window"]
-    public static let sharePickerButton = ["Share", "Share Screen"]
-}
-
 public struct MacZoomUI: ZoomUI {
     let sleeper = RunLoopSleeper()
+    public let strings: ZoomUIStrings
 
-    public init() {}
+    public init(strings: ZoomUIStrings = .defaults) { self.strings = strings }
 
     func app() throws -> AX {
         guard AXIsProcessTrusted() else { throw ZoomError.accessibilityDenied }
@@ -137,32 +127,32 @@ public struct MacZoomUI: ZoomUI {
 
     public func isInMeeting() -> Bool {
         guard let app = try? app() else { return false }
-        if app.windows.contains(where: { w in ZoomUIStrings.meetingWindowTitles.contains { w.title.hasPrefix($0) } }) {
+        if app.windows.contains(where: { w in strings.meetingWindowTitles.contains { w.title.hasPrefix($0) } }) {
             return true
         }
-        return app.menuBar?.children.contains { $0.title == ZoomUIStrings.meetingMenu } ?? false
+        return app.menuBar?.children.contains { $0.title == strings.meetingMenu } ?? false
     }
 
     public func isSharing() -> Bool {
         guard let app = try? app() else { return false }
-        if app.windows.contains(where: { ZoomUIStrings.shareToolbarWindows.contains($0.title.lowercased()) }) {
+        if app.windows.contains(where: { strings.shareToolbarWindows.contains($0.title.lowercased()) }) {
             return true
         }
-        return menuItem(app, titles: ZoomUIStrings.stopShareItems) != nil
+        return menuItem(app, titles: strings.stopShareItems) != nil
     }
 
     public func startShare(display: DisplayInfo) throws -> ShareMethod {
         let app = try app()
         NSRunningApplication.runningApplications(withBundleIdentifier: zoomBundleID).first?.activate()
         var method = ShareMethod.accessibility
-        if let item = menuItem(app, titles: ZoomUIStrings.startShareItems), item.enabled {
+        if let item = menuItem(app, titles: strings.startShareItems), item.enabled {
             item.press()
         } else {
             method = .keystroke
             Keyboard.send(keyCode: 1 /* s */, flags: [.maskCommand, .maskShift])
         }
         // Share picker: choose "Screen N"/"Desktop N" or the display's own name, then press Share.
-        let candidates = ["Screen \(display.index)", "Desktop \(display.index)", display.name]
+        let candidates = strings.tiles(for: display)
         var picked = false
         for _ in 0..<10 where !picked {
             sleeper.sleep(0.5)
@@ -170,7 +160,7 @@ public struct MacZoomUI: ZoomUI {
                 if let tile = w.find(depth: 10, { el in candidates.contains { el.label == $0 } }) {
                     tile.press()
                     if let btn = w.find(depth: 10, { $0.role == kAXButtonRole &&
-                        ZoomUIStrings.sharePickerButton.contains($0.title) }) {
+                        strings.sharePickerButtons.contains($0.title) }) {
                         btn.press()
                     } else {
                         Keyboard.send(keyCode: 36 /* return */, flags: [])
@@ -198,6 +188,25 @@ public struct MacZoomUI: ZoomUI {
         guard item.press() else { throw ZoomError.elementNotFound("pressable camera item \(named)") }
     }
 
+    /// Snapshot of window titles and menu titles for `roomagent calibrate`.
+    /// Throws when Accessibility is not granted (so calibration can't be misread as "no match").
+    public func observe() throws -> ObservedUI {
+        guard !MacZoomApp.apps().isEmpty else {
+            return ObservedUI(zoomRunning: false, windowTitles: [], menuBarTitles: [], menuItemTitles: [])
+        }
+        let app = try app()
+        var items: [String] = []
+        func collect(_ el: AX, depth: Int) {
+            if el.role == kAXMenuItemRole, !el.title.isEmpty { items.append(el.title) }
+            guard depth > 0 else { return }
+            el.children.forEach { collect($0, depth: depth - 1) }
+        }
+        let bar = app.menuBar
+        bar.map { collect($0, depth: 4) }
+        return ObservedUI(zoomRunning: true, windowTitles: app.windows.map(\.title),
+                          menuBarTitles: bar?.children.map(\.title) ?? [], menuItemTitles: items)
+    }
+
     public func dump(depth: Int) throws -> [String: Any] {
         let app = try app()
         return ["windows": app.windows.map { $0.dump(depth: depth) },
@@ -221,10 +230,12 @@ enum Keyboard {
 }
 
 public enum MacEnvironment {
-    public static func make() -> AgentEnvironment {
+    /// Throws if a UI-strings override file exists but is invalid (never silently ignored).
+    public static func make() throws -> AgentEnvironment {
         let devices = MacDevices()
+        let (strings, _) = try ZoomUIStrings.load()
         return AgentEnvironment(devices: devices, displays: devices, media: MacMedia(), session: MacSession(),
-                                network: TCPReachability(), zoom: MacZoomApp(), ui: MacZoomUI(),
+                                network: TCPReachability(), zoom: MacZoomApp(), ui: MacZoomUI(strings: strings),
                                 audio: CoreAudioRouting(), sleeper: RunLoopSleeper())
     }
 }

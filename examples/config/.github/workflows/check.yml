@@ -1,29 +1,21 @@
-name: Reconcile
+name: Check Zoom setup
+# Verifies secrets, scopes, host licenses and the alert webhook (docs/zoom-setup.md).
+# Needs zoom-control >= v0.1.1.
 on:
-  push:
-    branches: [main]
-    paths: ["rooms/**", "events/**"]
-  schedule:
-    - cron: "17 6 * * *"   # nightly drift repair
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: reconcile
-  cancel-in-progress: false
-
 jobs:
-  apply:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
-      - name: Apply specs to Zoom
-        env:
+      - env:
           ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
           ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
           ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
-        run: zoomctl apply -c .
+        run: zoomctl check -c . --test-alert
