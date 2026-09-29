@@ -16,11 +16,14 @@ from .notify import Level, WebhookNotifier
 from .reconcile import Action, apply, find_webinar_id, plan
 from .schedule import Gh, decide, execute
 from .spec import ConfigError, json_schemas, load_config
-from .zoom import Credentials, ZoomClient, ZoomError
+from .zoom import UserTokenProvider, ZoomClient, ZoomError, default_store
+from .zoom.tokens import TokenStore
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help=__doc__)
 node_app = typer.Typer(no_args_is_help=True, help="Commands that run on a room node.")
 app.add_typer(node_app, name="node")
+auth_app = typer.Typer(no_args_is_help=True, help="User-level Zoom authorization for host accounts (run on the node).")
+app.add_typer(auth_app, name="auth")
 
 ConfigOpt = Annotated[Path, typer.Option("--config", "-c", envvar="ZOOMCTL_CONFIG",
                                          help="Config repo root containing rooms/ and events/")]
@@ -45,12 +48,26 @@ def _load(config: Path):
         raise typer.Exit(1) from None
 
 
-def _zoom() -> ZoomClient:
+def _store() -> TokenStore:
     try:
-        return ZoomClient(Credentials.from_env())
+        return default_store()
     except ZoomError as exc:
         typer.echo(f"✗ {exc}", err=True)
         raise typer.Exit(1) from None
+
+
+def _zoom_for(store: TokenStore | None = None):
+    """Factory of per-host clients. Each client can act only as its host."""
+    store = store or _store()
+    clients: dict[str, ZoomClient] = {}
+
+    def zoom_for(host: str) -> ZoomClient:
+        host = host.strip().lower()
+        if host not in clients:
+            clients[host] = ZoomClient(UserTokenProvider(host, store))
+        return clients[host]
+
+    return zoom_for
 
 
 @app.command()
@@ -74,7 +91,8 @@ def check(config: ConfigOpt = Path("."),
     from .doctor import FAIL, check as run_check
 
     cfg = _load(config)
-    findings = run_check(cfg, _zoom())
+    store = _store()
+    findings = run_check(cfg, _zoom_for(store), store)
     for f in findings:
         typer.echo(f.line())
     failed = any(f.status == FAIL for f in findings)
@@ -122,7 +140,7 @@ def plan_cmd(config: ConfigOpt = Path("."), now: NowOpt = None,
              markdown: Annotated[Path | None, typer.Option(help="Also write a Markdown plan here")] = None) -> None:
     """Show what `apply` would change in Zoom."""
     cfg = _load(config)
-    changes = plan(cfg, _zoom(), now=_now(now), prune=prune)
+    changes = plan(cfg, _zoom_for(), now=_now(now), prune=prune)
     lines = [c.describe() for c in changes]
     typer.echo("\n".join(lines) or "no events")
     pending = sum(c.action in (Action.CREATE, Action.UPDATE, Action.DELETE) for c in changes)
@@ -137,9 +155,9 @@ def apply_cmd(config: ConfigOpt = Path("."), now: NowOpt = None,
               ) -> None:
     """Reconcile Zoom webinars with the specs (idempotent)."""
     cfg = _load(config)
-    zoom = _zoom()
-    changes = plan(cfg, zoom, now=_now(now), prune=prune)
-    errors = apply(changes, zoom)
+    zoom_for = _zoom_for()
+    changes = plan(cfg, zoom_for, now=_now(now), prune=prune)
+    errors = apply(changes, zoom_for)
     for c in changes:
         typer.echo(c.describe())
     if errors:
@@ -175,11 +193,27 @@ def dispatch(config: ConfigOpt = Path("."), now: NowOpt = None,
 def end(event: Annotated[str, typer.Option("--event", "-e")], config: ConfigOpt = Path(".")) -> None:
     """End an event's webinar via the API."""
     cfg = _load(config)
-    zoom = _zoom()
+    zoom_for = _zoom_for()
     ev = cfg.event(event)
-    wid = find_webinar_id(cfg, zoom, ev)
-    zoom.end_webinar(wid)
+    wid = find_webinar_id(cfg, zoom_for, ev)
+    zoom_for(cfg.room_for(ev).spec.zoom_host).end_webinar(wid)
     typer.echo(f"✓ ended webinar {wid} ({ev.uid})")
+
+
+@app.command("start-url")
+def start_url(event: Annotated[str, typer.Option("--event", "-e")], config: ConfigOpt = Path(".")) -> None:
+    """Write a fresh host start_url to a pipe (e.g. `| roomagent launch --start-url-stdin`).
+
+    Refuses to print to a terminal: the URL embeds a host token (ZAK)."""
+    if sys.stdout.isatty():
+        typer.echo("✗ refusing to print a host start_url to a terminal; pipe it into "
+                   "`roomagent launch --start-url-stdin`", err=True)
+        raise typer.Exit(1)
+    cfg = _load(config)
+    ev = cfg.event(event)
+    zoom_for = _zoom_for()
+    wid = find_webinar_id(cfg, zoom_for, ev)
+    sys.stdout.write(zoom_for(cfg.room_for(ev).spec.zoom_host).fresh_start_url(wid) + "\n")
 
 
 @node_app.command("run-event")
@@ -205,12 +239,18 @@ def run_event(event: Annotated[str, typer.Option("--event", "-e")], config: Conf
         notifier.send(Level.CRITICAL, "roomagent binary not found on node", "install via node/update.zsh")
         raise typer.Exit(1)
 
-    zoom = _zoom()
+    zoom_for = _zoom_for()
+    zoom = zoom_for(room.spec.zoom_host)
+    try:  # fail at dispatch time, not hours later at T-3, if the host's authorization is dead
+        zoom.verify_identity()
+    except ZoomError as exc:
+        notifier.send(Level.CRITICAL, f"Zoom authorization for {room.spec.zoom_host} is not usable", str(exc))
+        raise typer.Exit(1) from None
     webinar: dict[str, int] = {}
 
     def wid() -> int:
         if "id" not in webinar:
-            webinar["id"] = find_webinar_id(cfg, zoom, ev)
+            webinar["id"] = find_webinar_id(cfg, zoom_for, ev)
         return webinar["id"]
 
     lc = Lifecycle(ev, room, RoomAgentCLI(binary), ZoomOps(lambda: zoom.fresh_start_url(wid()),
@@ -221,6 +261,75 @@ def run_event(event: Annotated[str, typer.Option("--event", "-e")], config: Conf
                            "degraded": result.degraded_reasons, "error": result.error}, indent=2))
     if result.outcome is Outcome.FAILED:
         raise typer.Exit(2)
+
+
+@auth_app.command("login")
+def auth_login(
+    host: Annotated[str, typer.Option(help="Host account email, e.g. orfetalks@princeton.edu")],
+    client_id: Annotated[str | None, typer.Option(envvar="ZOOM_CLIENT_ID", help="General app Client ID")] = None,
+    redirect_uri: Annotated[str, typer.Option(help="Must exactly match the app's Redirect URL")] = "",
+    open_browser: Annotated[bool, typer.Option("--browser/--no-browser", help="Open the sign-in page")] = True,
+    timeout: Annotated[int, typer.Option(help="Seconds to wait for the loopback redirect")] = 300,
+) -> None:
+    """Authorize the user-managed Zoom app AS the host account and store its tokens on this node."""
+    import getpass
+    import webbrowser
+
+    from .auth import DEFAULT_REDIRECT, complete_login, is_loopback, parse_callback, run_in_thread, wait_for_loopback
+    from .zoom.tokens import OAuthApp
+
+    redirect_uri = redirect_uri or DEFAULT_REDIRECT
+    client_id = client_id or typer.prompt("Client ID")
+    secret = getpass.getpass("Client Secret (leave blank for a PKCE public client): ") or None
+    store = _store()
+    app_ = OAuthApp(client_id, secret, redirect_uri)
+    url, state, verifier = app_.begin()
+    typer.echo(f"\nSign in as {host} (use a private window if another Zoom user is signed in):\n\n  {url}\n")
+    if is_loopback(redirect_uri):
+        thread, out = run_in_thread(lambda: wait_for_loopback(redirect_uri, timeout))
+        if open_browser:
+            webbrowser.open(url)
+        typer.echo(f"waiting for the redirect on {redirect_uri} …")
+        thread.join()
+        if "error" in out:
+            raise out["error"]
+        callback = out["value"]
+    else:
+        if open_browser:
+            webbrowser.open(url)
+        callback = typer.prompt("After approving, paste the FULL URL your browser was redirected to")
+    rec, user = complete_login(app_, host, parse_callback(callback, state), verifier, store)
+    typer.echo(f"✓ authorized as {user.get('email')} — stored in {store.describe()}")
+    typer.echo(f"  scopes: {rec.scope or '?'}")
+    typer.echo("  next: zoomctl check -c <config repo>")
+
+
+@auth_app.command("status")
+def auth_status() -> None:
+    """List host authorizations stored on this node (no network calls)."""
+    import time as _time
+
+    store = _store()
+    hosts = store.hosts()
+    typer.echo(f"token store: {store.describe()}")
+    if not hosts:
+        typer.echo("✗ no hosts authorized — run: zoomctl auth login --host <email>", err=True)
+        raise typer.Exit(1)
+    for h in hosts:
+        rec = store.load(h)
+        typer.echo(f"  {rec.summary(_time.time())}" if rec else f"  {h}: index entry without token (re-login)")
+
+
+@auth_app.command("logout")
+def auth_logout(host: Annotated[str, typer.Option(help="Host account email")]) -> None:
+    """Revoke the host's authorization at Zoom and delete it from this node."""
+    from .auth import logout
+
+    if logout(host, _store()):
+        typer.echo(f"✓ revoked and removed {host}")
+    else:
+        typer.echo(f"✗ {host} is not authorized on this node", err=True)
+        raise typer.Exit(1)
 
 
 def main() -> None:  # pragma: no cover

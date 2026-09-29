@@ -25,7 +25,7 @@ zoom-control-config (private)                     zoom-control (this repo, publi
 
 | Path | What |
 |---|---|
-| [`ctl/`](ctl) | `zoomctl` Python package (specs, Zoom S2S OAuth client, reconcile, dispatch, lifecycle) |
+| [`ctl/`](ctl) | `zoomctl` Python package (specs, user-level Zoom OAuth client, reconcile, dispatch, lifecycle) |
 | [`agent/`](agent) | `roomagent` SwiftPM package + build/run/test/notarize scripts |
 | [`.github/actions/setup-zoomctl`](.github/actions/setup-zoomctl) | Composite action the config repo pins |
 | [`examples/config/`](examples/config) | Template for the private config repo (rooms, events, workflows) |
@@ -54,8 +54,10 @@ docker-compose run --rm test-swift   # RoomAgentCore tests on Linux
 
 1. **Release** a signed, notarized build from your Mac: `scripts/release.zsh 0.1.1 --config-repo ../zoom-control-config`
    ([docs/releasing.md](docs/releasing.md)).
-2. **Zoom + alerts**: create the Server-to-Server OAuth app and webhook, then verify and store the secrets with
-   `scripts/set-config-secrets.zsh` ([docs/zoom-setup.md](docs/zoom-setup.md)).
+2. **Zoom**: OIT creates a user-managed General app with user-level scopes only. The host account
+   (e.g. `orfetalks@princeton.edu`) authorizes it on the node with `zoomctl auth login`. There is no
+   account-wide credential anywhere ([docs/zoom-setup.md](docs/zoom-setup.md)). Add the one GitHub
+   secret, `ALERT_WEBHOOK_URL`.
 3. **Nodes**: provision each Mac with `node/bootstrap.zsh` ([docs/node-setup.md](docs/node-setup.md)), then do the
    one-time [calibration](docs/calibration.md) (privacy approvals, Zoom UI strings, launch mode).
 4. **Events**: add them by PR in the config repo. Review the plan comment, merge, done.

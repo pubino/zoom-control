@@ -11,21 +11,41 @@
   public repo only takes effect after a reviewed bump (Dependabot opens it). For maximum assurance,
   pin a commit SHA instead of a tag.
 
-## Secrets
+## Zoom authorization: user-level only
+
+There is **no account-wide Zoom credential** anywhere: no Server-to-Server app, no `:admin`
+scopes. The host account (e.g. `orfetalks@princeton.edu`) authorizes a user-managed General
+app once, and its tokens can act only as that user. Zoom enforces this:
+
+* A stolen token can affect only `orfetalks`'s own webinars and profile. It can't read or start
+  anyone else's sessions, and it can't list account users.
+* `zoomctl` additionally verifies `GET /users/me` matches the configured `zoom_host` before any
+  write, and refuses to store tokens at login if the wrong user signed in.
+* The Client ID/Secret and tokens live **only** in the node's login keychain (`av-runner`,
+  service `zoom-control`), created with an ACL for `/usr/bin/security` only. They are never in
+  GitHub, never in argv of long-running processes, and never logged. (`security add-generic-password
+  -w` does briefly carry the JSON in argv; macOS shows other users' process arguments only to root.)
+* Refresh tokens are single-use and expire after 90 days unused. Each rotation is written
+  atomically under a lock before use. Revoke at any time with `zoomctl auth logout --host …`
+  or Zoom web ▸ *Apps* ▸ *Installed* ▸ remove.
+
+**What still matters.** The config repo's `zoom-api` jobs run on the node with access to that
+keychain. Anyone with **write access to the private config repo** can run code there (for
+example by editing a workflow in a PR), and so can act as `orfetalks`. Keep collaborators to the
+people who operate the room, require review on `main`, and keep fork PR workflows disabled.
+
+## GitHub secrets
 
 | Secret | Used by | Notes |
 |---|---|---|
-| `ZOOM_ACCOUNT_ID` / `ZOOM_CLIENT_ID` / `ZOOM_CLIENT_SECRET` | validate, reconcile, run-event, manual-* | S2S OAuth app. Scope it to webinar read/write/status only. |
-| `ALERT_WEBHOOK_URL` | all | Slack-compatible `{"text": …}` incoming webhook |
+| `ALERT_WEBHOOK_URL` | all | Slack-compatible `{"text": …}` incoming webhook. The only secret. |
 
 Signing keys and notarization credentials never leave the release manager's Mac: releases are
 cut locally with `scripts/release.zsh` ([releasing.md](releasing.md)), and CI only *verifies* published
 assets.
 
-Secrets reach a room node only for the duration of a job. The `start_url` (which contains a ZAK
-host token) goes to `roomagent` **on stdin**, never argv, and is redacted in all output.
-Use per-room GitHub Environments (created automatically as `room-XXX`) if you want to add required
-reviewers or scope secrets per room.
+The `start_url` (which contains a short-lived ZAK host token) goes to `roomagent` **on stdin**,
+never argv, and is redacted in all output. `zoomctl start-url` refuses to print it to a terminal.
 
 ## macOS privacy (TCC)
 

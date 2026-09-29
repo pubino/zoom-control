@@ -9,12 +9,9 @@ permissions:
 
 jobs:
   end:
-    runs-on: ubuntu-latest
+    # Runs on the node that holds the host's user-level Zoom authorization (keychain).
+    runs-on: [self-hosted, macOS, zoom-api]
     steps:
       - uses: actions/checkout@v5
       - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
-      - env:
-          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
-          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
-          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
-        run: zoomctl end -c . --event "${{ inputs.event }}"
+      - run: zoomctl end -c . --event "${{ inputs.event }}"

@@ -14,6 +14,8 @@ All actions are in the **private config repo → Actions** tab.
 | Signal issues | `health: audio_signal failing` etc. | Hardware or routing: the webinar stays live. Fix locally. A `recovered:` notice follows. |
 | End now | — | `Manual end` (event uid), or cancel the `Run event` run (the room resets via `quit --force`). |
 | Cancel an event | — | Delete its YAML in a PR. Reconcile deletes the future webinar. |
+| Zoom authorization dead | `Zoom authorization for … is not usable` / `Zoom rejected the refresh token` | On the node, in the av-runner GUI session: `~/.zoomctl/venv/bin/zoomctl auth login --host <host>`. Then re-run the failed job. |
+| API jobs stuck queued | Reconcile/plan never start | The `zoom-api` runner is offline: check `~av-runner/actions-runner-api` and the node's power and network. |
 
 ## Useful node commands (as `av-runner`)
 

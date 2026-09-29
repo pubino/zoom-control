@@ -12,7 +12,7 @@ runner = CliRunner()
 @pytest.fixture
 def zoom(monkeypatch):
     z = FakeZoom()
-    monkeypatch.setattr(cli, "_zoom", lambda: z)
+    monkeypatch.setattr(cli, "_zoom_for", lambda store=None: z.zoom_for)
     return z
 
 
@@ -81,3 +81,40 @@ def test_run_event_requires_roomagent(config_dir, zoom, monkeypatch):
     monkeypatch.setattr("zoomctl.node.agent.find_roomagent", lambda explicit=None: None)
     r = invoke("node", "run-event", "-c", str(config_dir), "-e", "cs101-guest-2026-09-10")
     assert r.exit_code == 1
+
+
+def test_run_event_alerts_immediately_when_host_not_authorized(config_dir, monkeypatch, tmp_path):
+    from zoomctl.notify import WebhookNotifier
+    from zoomctl.zoom.tokens import FileTokenStore
+
+    sent = []
+    monkeypatch.setattr(WebhookNotifier, "send", lambda self, level, title, detail="": sent.append((level, title, detail)))
+    monkeypatch.setattr(cli, "_store", lambda: FileTokenStore(tmp_path / "empty"))
+    monkeypatch.setattr("zoomctl.node.agent.find_roomagent", lambda explicit=None: "/bin/true")
+    r = runner.invoke(cli.app, ["node", "run-event", "-c", str(config_dir), "-e", "cs101-guest-2026-09-10"])
+    assert r.exit_code == 1
+    assert sent and sent[0][1].startswith("Zoom authorization for host-room-101@example.edu")
+    assert "zoomctl auth login" in sent[0][2]
+
+
+def test_start_url_goes_to_pipe_but_never_a_terminal(config_dir, zoom, monkeypatch):
+    import typer
+
+    invoke("apply", "-c", str(config_dir), "--now", "2026-09-01T00:00:00+00:00")
+    r = invoke("start-url", "-c", str(config_dir), "-e", "cs101-guest-2026-09-10")  # CliRunner stdout is a pipe
+    assert r.exit_code == 0 and r.output.strip().endswith("zak=fresh")
+
+    class Tty:
+        written = []
+
+        def isatty(self):
+            return True
+
+        def write(self, s):
+            self.written.append(s)
+
+    tty = Tty()
+    monkeypatch.setattr(cli.sys, "stdout", tty)
+    with pytest.raises(typer.Exit) as exc:
+        cli.start_url(event="cs101-guest-2026-09-10", config=config_dir)
+    assert exc.value.exit_code == 1 and not any("zak" in w for w in tty.written)

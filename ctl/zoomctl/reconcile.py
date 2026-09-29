@@ -11,8 +11,13 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
+from collections.abc import Callable
+
 from .spec import Config, Event, parse_marker, spec_hash, with_marker
 from .zoom import ZoomClient
+
+# One client per Zoom host; each can act only as that host (user-level OAuth).
+ZoomFor = Callable[[str], ZoomClient]
 
 
 class Action(StrEnum):
@@ -52,10 +57,11 @@ def _parse_zoom_time(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
-def managed_webinars(zoom: ZoomClient, hosts: set[str]) -> dict[str, list[ManagedWebinar]]:
+def managed_webinars(zoom_for: ZoomFor, hosts: set[str]) -> dict[str, list[ManagedWebinar]]:
     found: dict[str, list[ManagedWebinar]] = {}
     for host in sorted(hosts):
-        for w in zoom.list_webinars(host):
+        zoom = zoom_for(host)
+        for w in zoom.list_webinars():
             agenda = w.get("agenda")
             if agenda is None:  # some list responses omit agenda; fetch the detail
                 agenda = zoom.get_webinar(w["id"]).get("agenda")
@@ -69,9 +75,9 @@ def managed_webinars(zoom: ZoomClient, hosts: set[str]) -> dict[str, list[Manage
     return found
 
 
-def plan(cfg: Config, zoom: ZoomClient, *, now: datetime, prune: bool = True) -> list[Change]:
+def plan(cfg: Config, zoom_for: ZoomFor, *, now: datetime, prune: bool = True) -> list[Change]:
     hosts = {r.spec.zoom_host for r in cfg.rooms.values()}
-    existing = managed_webinars(zoom, hosts)
+    existing = managed_webinars(zoom_for, hosts)
     changes: list[Change] = []
 
     for uid, ev in sorted(cfg.events.items()):
@@ -104,13 +110,16 @@ def plan(cfg: Config, zoom: ZoomClient, *, now: datetime, prune: bool = True) ->
     return changes
 
 
-def apply(changes: list[Change], zoom: ZoomClient) -> list[str]:
+def apply(changes: list[Change], zoom_for: ZoomFor) -> list[str]:
     """Apply changes; returns per-change error strings (empty list == full success)."""
     errors: list[str] = []
     for ch in changes:
         try:
+            if ch.action in (Action.NOOP, Action.SKIP):
+                continue
+            zoom = zoom_for(ch.host)
             if ch.action is Action.CREATE:
-                created = zoom.create_webinar(ch.host, ch.body or {})
+                created = zoom.create_webinar(ch.body or {})
                 ch.webinar_id = int(created["id"])
             elif ch.action is Action.UPDATE:
                 zoom.update_webinar(ch.webinar_id, ch.body or {})
@@ -121,10 +130,10 @@ def apply(changes: list[Change], zoom: ZoomClient) -> list[str]:
     return errors
 
 
-def find_webinar_id(cfg: Config, zoom: ZoomClient, event: Event) -> int:
+def find_webinar_id(cfg: Config, zoom_for: ZoomFor, event: Event) -> int:
     """Locate the managed webinar for an event (used at run time)."""
     host = cfg.room_for(event).spec.zoom_host
-    for w in managed_webinars(zoom, {host}).get(event.uid, []):
+    for w in managed_webinars(zoom_for, {host}).get(event.uid, []):
         if w.host == host:
             return w.webinar_id
     raise LookupError(f"no managed webinar for event {event.uid!r} under host {host!r}; run `zoomctl apply`")

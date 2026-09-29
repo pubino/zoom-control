@@ -25,7 +25,10 @@ control, local macOS automation for the room), with the failure modes below desi
 ### `zoomctl` (Python, `ctl/`)
 * `spec.py` — pydantic models for `Room` and `ZoomWebinar` (apiVersion `zoomcontrol/v1`), cross-file
   validation (unknown rooms, duplicate uids, overlapping events incl. preflight/grace windows).
-* `zoom/client.py` — Server-to-Server OAuth (token cache, 401 re-auth), retry with backoff on 429/5xx
+* `zoom/tokens.py` — user-level OAuth for one host account: PKCE login, single-use refresh-token
+  rotation under a cross-process lock, macOS keychain store. No account-wide credential exists.
+* `zoom/client.py` — acts only as that host (`/users/me/...`), verifies identity before writes, retry
+  with backoff on 429/5xx
   honouring `Retry-After`, pagination.
 * `reconcile.py` — plan/apply. Managed webinars are found by marker under each room's host user;
   unmarked webinars are never touched; past events are never modified; orphans are pruned only

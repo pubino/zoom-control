@@ -45,13 +45,22 @@ class RoomMeta(_Strict):
 class RoomSpec(_Strict):
     runner_label: str = Field(pattern=SLUG)
     timezone: str = "America/New_York"
-    zoom_host: str = Field(description="Zoom user (email or id) that hosts this room's webinars")
+    zoom_host: str = Field(description="Email of the Zoom user that hosts this room's webinars; it must be "
+                                       "authorized on the node with `zoomctl auth login`")
     av: AVRouting
     thresholds: Thresholds = Thresholds()
     launch_mode: Literal["zoommtg", "https"] = Field(
         default="zoommtg",
         description="How roomagent opens the start_url: zoommtg:// client scheme (default) or https via zoom.us.app",
     )
+
+    @field_validator("zoom_host")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v):
+            raise ValueError("zoom_host must be the host's email address")
+        return v
 
     @field_validator("timezone")
     @classmethod
@@ -221,18 +230,32 @@ def load_config(root: str | Path) -> Config:
         if ev.spec.room not in cfg.rooms:
             problems.append(f"event {ev.uid!r}: references unknown room {ev.spec.room!r}")
 
+    def overlaps(groups: dict[str, list[Event]], what: str) -> None:
+        for key, evs in groups.items():
+            evs.sort(key=lambda e: e.start)
+            for a, b in zip(evs, evs[1:]):
+                gap = a.end + timedelta(minutes=a.spec.lifecycle.grace_minutes)
+                if b.start - timedelta(minutes=b.spec.lifecycle.preflight_minutes) < gap:
+                    problems.append(f"{what} {key!r}: events {a.uid!r} and {b.uid!r} overlap "
+                                    "(including grace and preflight windows)")
+
+    known = [ev for ev in cfg.events.values() if ev.spec.room in cfg.rooms]
     by_room: dict[str, list[Event]] = {}
-    for ev in cfg.events.values():
+    by_host: dict[str, list[Event]] = {}
+    for ev in known:
         by_room.setdefault(ev.spec.room, []).append(ev)
-    for room_id, evs in by_room.items():
-        evs.sort(key=lambda e: e.start)
-        for a, b in zip(evs, evs[1:]):
-            gap = a.end + timedelta(minutes=a.spec.lifecycle.grace_minutes)
-            if b.start - timedelta(minutes=b.spec.lifecycle.preflight_minutes) < gap:
-                problems.append(
-                    f"room {room_id!r}: events {a.uid!r} and {b.uid!r} overlap "
-                    "(including grace and preflight windows)"
-                )
+    overlaps(by_room, "room")
+    # A Zoom user can host only one live webinar at a time, even across rooms.
+    for ev in known:
+        host = cfg.rooms[ev.spec.room].spec.zoom_host
+        by_host.setdefault(host, []).append(ev)
+    reported = set(problems)
+    before = len(problems)
+    overlaps({h: evs for h, evs in by_host.items()
+              if len({e.spec.room for e in evs}) > 1}, "host")
+    # drop host findings that merely repeat a same-room overlap
+    problems[before:] = [p for p in problems[before:]
+                         if not any(p.split(": ", 1)[1] == r.split(": ", 1)[1] for r in reported)]
 
     if problems:
         raise ConfigError(problems)

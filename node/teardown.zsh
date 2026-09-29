@@ -20,16 +20,23 @@ require_macos
 require_cmd gh
 
 home="$(runner_home)"
-rdir="$home/actions-runner"
-if [[ -n "$home" && -x "$rdir/config.sh" ]]; then
-  (cd "$rdir" && as_runner ./svc.sh stop) || true
-  (cd "$rdir" && as_runner ./svc.sh uninstall) || true
-  token="$(gh api -X POST "repos/$config_repo/actions/runners/remove-token" -q .token)"
-  (cd "$rdir" && as_runner ./config.sh remove --token "$token") || warn "runner removal failed; delete it in repo settings"
-  run sudo rm -rf "$rdir"
-  ok "runner removed"
-else
-  info "no runner installed"
+for rdir in "$home/actions-runner" "$home/actions-runner-api"; do
+  if [[ -n "$home" && -x "$rdir/config.sh" ]]; then
+    (cd "$rdir" && as_runner ./svc.sh stop) || true
+    (cd "$rdir" && as_runner ./svc.sh uninstall) || true
+    token="$(gh api -X POST "repos/$config_repo/actions/runners/remove-token" -q .token)"
+    (cd "$rdir" && as_runner ./config.sh remove --token "$token") || warn "runner removal failed; delete it in repo settings"
+    run sudo rm -rf "$rdir"
+    ok "runner in $rdir removed"
+  fi
+done
+
+# Revoke and delete Zoom host authorizations stored on this node.
+if [[ -x "$home/.zoomctl/venv/bin/zoomctl" ]]; then
+  for h in $(sudo -u "$RUNNER_USER" "$home/.zoomctl/venv/bin/zoomctl" auth status 2>/dev/null | awk '/^  [^ ]+@[^ ]+:/{sub(":","",$1); print $1}'); do
+    as_runner "$home/.zoomctl/venv/bin/zoomctl" auth logout --host "$h" || warn "could not revoke $h (revoke it in Zoom Marketplace ▸ Manage ▸ Installed apps)"
+  done
+  run sudo rm -rf "$home/.zoomctl"
 fi
 
 run sudo pkill -x zoom.us || true

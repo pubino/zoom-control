@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
-# Upgrade roomagent on a room node to a release. The runner self-updates; zoomctl is
-# installed per-job by the setup-zoomctl action at the ref pinned in the config repo.
+# Upgrade roomagent and the node's interactive zoomctl to a release. The runner self-updates;
+# CI jobs install zoomctl per-job at the ref pinned in the config repo. Zoom authorizations
+# in the keychain are untouched.
 #
 #   ./update.zsh --version v0.2.0
 source "${0:A:h}/lib.zsh"
@@ -23,5 +24,6 @@ if pgrep -x zoom.us >/dev/null; then
 fi
 before="$(/usr/local/bin/roomagent --version 2>/dev/null || echo none)"
 install_roomagent "$version"
+install_zoomctl "$version"
 ok "roomagent $before → $(/usr/local/bin/roomagent --version 2>/dev/null || echo "$version (dry-run)")"
 warn "if the new binary's code requirement changed, re-deploy the PPPC profile (docs/security.md)"

@@ -1,82 +1,46 @@
-"""Zoom REST client using Server-to-Server OAuth, with retry/backoff on 429/5xx."""
+"""Zoom REST client acting as ONE user via user-level OAuth, with retry/backoff on 429/5xx.
+
+Every call goes to that user's own resources (`/users/me/...`, or webinars it hosts), so
+the client cannot reach any other account member even if misconfigured.
+"""
 
 from __future__ import annotations
 
 import os
 import time
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
+from .errors import ZoomAuthError, ZoomError
+
 DEFAULT_API = "https://api.zoom.us/v2"
-DEFAULT_OAUTH = "https://zoom.us/oauth/token"
 
 
-class ZoomError(Exception):
-    def __init__(self, message: str, status: int | None = None, body: Any = None):
-        super().__init__(message)
-        self.status = status
-        self.body = body
+class TokenProvider(Protocol):
+    host: str
 
-
-@dataclass(frozen=True)
-class Credentials:
-    account_id: str
-    client_id: str
-    client_secret: str
-
-    @classmethod
-    def from_env(cls, env: dict[str, str] | None = None) -> Credentials:
-        env = dict(os.environ if env is None else env)
-        missing = [k for k in ("ZOOM_ACCOUNT_ID", "ZOOM_CLIENT_ID", "ZOOM_CLIENT_SECRET") if not env.get(k)]
-        if missing:
-            raise ZoomError(f"missing Zoom credentials in environment: {', '.join(missing)}")
-        return cls(env["ZOOM_ACCOUNT_ID"], env["ZOOM_CLIENT_ID"], env["ZOOM_CLIENT_SECRET"])
+    def access_token(self, rejected: str | None = None) -> str: ...
 
 
 class ZoomClient:
     def __init__(
         self,
-        creds: Credentials,
+        tokens: TokenProvider,
         *,
         api_base: str | None = None,
-        oauth_url: str | None = None,
         http: httpx.Client | None = None,
         max_retries: int = 4,
         sleep: Callable[[float], None] = time.sleep,
-        monotonic: Callable[[], float] = time.monotonic,
     ):
-        self._creds = creds
+        self._tokens = tokens
+        self.host = tokens.host
         self._api = (api_base or os.environ.get("ZOOM_API_BASE") or DEFAULT_API).rstrip("/")
-        self._oauth = oauth_url or os.environ.get("ZOOM_OAUTH_URL") or DEFAULT_OAUTH
         self._http = http or httpx.Client(timeout=httpx.Timeout(20.0))
         self._max_retries = max_retries
         self._sleep = sleep
-        self._monotonic = monotonic
-        self._token: str | None = None
-        self._token_expiry = 0.0
-
-    # ------------------------------------------------------------------ auth
-
-    def _access_token(self, force: bool = False) -> str:
-        if not force and self._token and self._monotonic() < self._token_expiry - 60:
-            return self._token
-        resp = self._http.post(
-            self._oauth,
-            params={"grant_type": "account_credentials", "account_id": self._creds.account_id},
-            auth=(self._creds.client_id, self._creds.client_secret),
-        )
-        if resp.status_code != 200:
-            raise ZoomError(f"OAuth token request failed: HTTP {resp.status_code}", resp.status_code, _body(resp))
-        data = resp.json()
-        token = data.get("access_token")
-        if not token:
-            raise ZoomError("OAuth response missing access_token", resp.status_code, data)
-        self._token = token
-        self._token_expiry = self._monotonic() + float(data.get("expires_in", 3600))
-        return token
+        self._verified = False
 
     # --------------------------------------------------------------- request
 
@@ -84,8 +48,10 @@ class ZoomClient:
         url = f"{self._api}{path}"
         reauthed = False
         attempt = 0
+        rejected: str | None = None
         while True:
-            headers = {"Authorization": f"Bearer {self._access_token()}"}
+            token = self._tokens.access_token(rejected)
+            headers = {"Authorization": f"Bearer {token}"}
             try:
                 resp = self._http.request(method, url, headers=headers, **kwargs)
             except httpx.TransportError as exc:
@@ -97,7 +63,7 @@ class ZoomClient:
 
             if resp.status_code == 401 and not reauthed:
                 reauthed = True
-                self._access_token(force=True)
+                rejected = token
                 continue
             if resp.status_code == 429 or resp.status_code >= 500:
                 if attempt >= self._max_retries:
@@ -124,41 +90,60 @@ class ZoomClient:
                 pass
         self._sleep(delay)
 
-    # ----------------------------------------------------------------- users
+    # -------------------------------------------------------------- identity
 
-    def get_user(self, user: str) -> dict[str, Any]:
-        return self.request("GET", f"/users/{user}")
+    def me(self) -> dict[str, Any]:
+        return self.request("GET", "/users/me")
 
-    def get_user_settings(self, user: str) -> dict[str, Any]:
-        return self.request("GET", f"/users/{user}/settings")
+    def settings(self) -> dict[str, Any]:
+        return self.request("GET", "/users/me/settings")
+
+    def verify_identity(self) -> dict[str, Any]:
+        """Fail unless the token really belongs to the configured host."""
+        user = self.me()
+        email = (user.get("email") or "").lower()
+        if email != self.host:
+            raise ZoomAuthError(f"token belongs to {email or '?'}, not {self.host}; refusing to act")
+        self._verified = True
+        return user
+
+    def _ensure_identity(self) -> None:
+        if not self._verified:
+            self.verify_identity()
 
     # -------------------------------------------------------------- webinars
 
-    def list_webinars(self, user: str) -> Iterator[dict[str, Any]]:
+    def list_webinars(self) -> Iterator[dict[str, Any]]:
+        self._ensure_identity()
         token = ""
         while True:
             params: dict[str, Any] = {"page_size": 300, "type": "scheduled"}
             if token:
                 params["next_page_token"] = token
-            data = self.request("GET", f"/users/{user}/webinars", params=params) or {}
+            data = self.request("GET", "/users/me/webinars", params=params) or {}
             yield from data.get("webinars", [])
             token = data.get("next_page_token") or ""
             if not token:
                 return
 
     def get_webinar(self, webinar_id: int | str) -> dict[str, Any]:
+        self._ensure_identity()
         return self.request("GET", f"/webinars/{webinar_id}")
 
-    def create_webinar(self, user: str, body: dict[str, Any]) -> dict[str, Any]:
-        return self.request("POST", f"/users/{user}/webinars", json=body)
+    def create_webinar(self, body: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_identity()
+        return self.request("POST", "/users/me/webinars", json=body)
 
     def update_webinar(self, webinar_id: int | str, body: dict[str, Any]) -> None:
+        self._ensure_identity()
         self.request("PATCH", f"/webinars/{webinar_id}", json=body)
 
     def delete_webinar(self, webinar_id: int | str) -> None:
+        self._ensure_identity()
         self.request("DELETE", f"/webinars/{webinar_id}")
 
     def end_webinar(self, webinar_id: int | str) -> None:
+        self._ensure_identity()
         self.request("PUT", f"/webinars/{webinar_id}/status", json={"action": "end"})
 
     def fresh_start_url(self, webinar_id: int | str) -> str:

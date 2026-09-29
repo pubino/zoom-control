@@ -10,17 +10,21 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest   # GitHub-hosted: PRs never run on room hardware
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
       - run: zoomctl validate -c .
-      - name: Plan against Zoom
-        env:
-          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
-          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
-          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
-        run: zoomctl plan -c . --markdown plan.md
+
+  plan:
+    needs: validate
+    # Needs the host's Zoom authorization, which lives only on the zoom-api node.
+    # Only collaborators can open PRs here (private repo, fork PR workflows disabled).
+    runs-on: [self-hosted, macOS, zoom-api]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
+      - run: zoomctl plan -c . --markdown plan.md
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'
         env:

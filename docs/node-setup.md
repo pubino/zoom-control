@@ -14,8 +14,8 @@ gh auth login            # account with admin on the private config repo
 
 ```zsh
 git clone https://github.com/pubino/zoom-control && cd zoom-control/node
-DRY_RUN=1 ./bootstrap.zsh --room room-101 --config-repo pubino/zoom-control-config --version v0.1.0
-./bootstrap.zsh          --room room-101 --config-repo pubino/zoom-control-config --version v0.1.0
+DRY_RUN=1 ./bootstrap.zsh --room room-101 --config-repo pubino/zoom-control-config --version v0.1.1 --api-runner
+./bootstrap.zsh          --room room-101 --config-repo pubino/zoom-control-config --version v0.1.1 --api-runner
 ```
 
 This creates the standard user `av-runner`, disables sleep, enables auto-restart after power loss plus
@@ -23,6 +23,22 @@ a daily 04:00 restart, sets automatic login, installs the notarized `roomagent` 
 unsigned builds), and registers a GitHub Actions runner labelled `macOS,room-101` **on the private
 config repo only**, running as a LaunchAgent in `av-runner`'s GUI session. The runner's `.env` pins
 `ZOOMCTL_ROOM=room-101`, so the node refuses events for other rooms.
+
+`--api-runner` registers a second runner (`room-101-api`, label `zoom-api`) for jobs that call
+the Zoom API: PR plan, reconcile, check, manual end. They can then run while the room runner is
+busy with an event. Use it on the node that holds the host's authorization (next step). Bootstrap
+also installs `zoomctl` for interactive use at `~av-runner/.zoomctl/venv/bin/zoomctl`.
+
+## 2b. Authorize the host account
+
+In the `av-runner` GUI session (after the reboot that enables auto-login):
+
+```zsh
+~/.zoomctl/venv/bin/zoomctl auth login --host orfetalks@princeton.edu
+```
+
+Sign in **as the host account** in the browser that opens. Details and troubleshooting are in
+[zoom-setup.md](zoom-setup.md).
 
 ## 3. One-time privacy approvals and calibration
 

@@ -39,8 +39,28 @@ def write_event(config_dir: Path, uid: str, start: datetime, **spec: Any) -> Pat
 NOW = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
 
 
+class _HostView:
+    """What a per-host ZoomClient exposes; delegates to the shared fake account."""
+
+    def __init__(self, acct: "FakeZoom", host: str):
+        self.acct, self.host = acct, host
+
+    def list_webinars(self):
+        return self.acct.list_webinars(self.host)
+
+    def create_webinar(self, body):
+        return self.acct.create_webinar(self.host, body)
+
+    def __getattr__(self, name):
+        return getattr(self.acct, name)
+
+
 class FakeZoom:
-    """In-memory stand-in for ZoomClient used by reconcile/dispatch tests."""
+    """In-memory stand-in for a Zoom account; `zoom_for(host)` gives the per-host client view."""
+
+    def zoom_for(self, host: str) -> _HostView:
+        self.calls.append(("client", host))
+        return _HostView(self, host)
 
     def __init__(self) -> None:
         self.webinars: dict[int, dict[str, Any]] = {}

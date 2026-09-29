@@ -25,9 +25,6 @@ jobs:
           require-roomagent: "true"
       - name: Event lifecycle (waits for T-15, preflight, live, monitor, teardown)
         env:
-          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
-          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
-          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
         # ZOOMCTL_ROOM comes from the runner's .env (node/bootstrap.zsh) so a node refuses
         # events addressed to another room even if labels are misconfigured.

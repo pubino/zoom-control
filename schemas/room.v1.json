@@ -82,7 +82,7 @@
           "type": "string"
         },
         "zoom_host": {
-          "description": "Zoom user (email or id) that hosts this room's webinars",
+          "description": "Email of the Zoom user that hosts this room's webinars; it must be authorized on the node with `zoomctl auth login`",
           "title": "Zoom Host",
           "type": "string"
         }

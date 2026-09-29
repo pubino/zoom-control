@@ -1,86 +1,111 @@
-# Zoom & alert setup (config repo secrets)
+# Zoom setup: user-level OAuth for the host account
 
-The private config repo needs four Actions secrets:
+zoom-control never holds an account-wide Zoom credential. It uses a **user-managed General
+app** that the **host account itself** authorizes, for example `orfetalks@princeton.edu`. The
+resulting tokens can act only as that user: its own webinars, its own profile. They cannot see or
+change anyone else in the Princeton account, and Zoom enforces that, not this code.
 
-| Secret | Where it comes from |
+| What | Where it lives |
 |---|---|
-| `ZOOM_ACCOUNT_ID` | Zoom Marketplace ▸ your Server-to-Server OAuth app ▸ **App Credentials** |
-| `ZOOM_CLIENT_ID` | same page |
-| `ZOOM_CLIENT_SECRET` | same page |
-| `ALERT_WEBHOOK_URL` | a Slack incoming webhook (or a Teams workflow webhook) |
+| App Client ID / Client Secret | Only in the node's keychain, stored at `zoomctl auth login` |
+| Host access and refresh tokens | Only in the node's keychain (`av-runner` login keychain, service `zoom-control`) |
+| `ALERT_WEBHOOK_URL` | The only GitHub secret, in the config repo |
 
-## 1. Prerequisites in Zoom
+## 1. What to ask OIT for
 
-* A Zoom account on a plan with **Webinars**. Every room's `zoom_host` must be a **Licensed** user
-  with a **Webinar license** assigned (Admin ▸ User Management ▸ Users ▸ edit user ▸ Webinar).
-  One host per room is simplest. A single host can serve several rooms only if their events never
-  overlap, because a host can run one webinar at a time.
-* You need a role that may create Server-to-Server OAuth apps. Account owners and admins have it.
-  Otherwise an owner grants it under Admin ▸ User Management ▸ Roles ▸ *Role Settings* ▸
-  Advanced features ▸ **Server-to-Server OAuth app** (View + Edit).
+Individual Princeton users can't create Marketplace apps, so OIT (the Zoom account admins) must
+either create the app or let you create it. The request:
 
-## 2. Create the Server-to-Server OAuth app
+* **App type:** *General app*, **User-managed**, **not published** (internal to the Princeton
+  account only).
+* **Scopes (user-level only, no `:admin` scopes):**
 
-1. Go to <https://marketplace.zoom.us> ▸ **Develop** ▸ **Build App** ▸ **Server to Server OAuth App**.
-   Name it e.g. `zoom-control`.
-2. **App Credentials**: copy **Account ID**, **Client ID**, **Client Secret**.
-3. **Information**: fill in the required company/contact fields.
-4. **Scopes** ▸ *Add Scopes*. Search for and add these (granular names):
+  | Scope | Used for |
+  |---|---|
+  | `webinar:read:list_webinars` | find the host's managed webinars |
+  | `webinar:read:webinar` | read a webinar and get a fresh host `start_url` |
+  | `webinar:write:webinar` | create webinars |
+  | `webinar:update:webinar` | update webinars when a spec changes |
+  | `webinar:delete:webinar` | cancel webinars whose spec was removed |
+  | `webinar:update:status` | end the webinar at the scheduled time |
+  | `user:read:user` | confirm the token belongs to the host (identity check) |
+  | `user:read:settings` | confirm the host has a Webinar license |
 
-   | Scope | Used for |
-   |---|---|
-   | `webinar:read:list_webinars:admin` | find managed webinars (reconcile) |
-   | `webinar:read:webinar:admin` | fetch a fresh `start_url` |
-   | `webinar:write:webinar:admin` | create webinars |
-   | `webinar:update:webinar:admin` | update webinars when a spec changes |
-   | `webinar:delete:webinar:admin` | delete webinars whose spec was removed |
-   | `webinar:update:status:admin` | end a webinar at teardown |
-   | `user:read:user:admin` | `zoomctl check`: host exists and is licensed |
-   | `user:read:settings:admin` | `zoomctl check`: host has a webinar license |
+  Exact names can differ slightly in the scope picker. Choose the *non-admin* variant of each.
+  `zoomctl check` reports any missing scope by name (Zoom error 4711).
+* **Redirect URL and OAuth allow list:** `http://127.0.0.1:8765/zoom/callback`. Use 127.0.0.1,
+  not `localhost`, which Zoom has recently rejected. If OIT requires HTTPS, any HTTPS URL they
+  control works. `zoomctl auth login --redirect-uri <url>` then asks you to paste the redirected
+  URL instead of catching it locally.
+* **Installation:** allow `orfetalks@princeton.edu` to authorize (install) this app. Pre-approve
+  it if the account requires admin approval for Marketplace apps.
+* **Hand-off:** the Client ID and Client Secret, sent securely. They're entered once on the node
+  and never stored in GitHub.
 
-   Zoom occasionally renames scopes. If a name isn't found, pick the equivalent under
-   *Webinar* / *User*. `zoomctl check` reports any missing scope by name (Zoom error 4711).
-5. **Activation** ▸ **Activate your app**. An inactive app returns `invalid_client`.
+The host account needs a **Licensed** seat and a **Webinar license** (`orfetalks` has one). Your
+own account needs neither.
 
-## 3. Alert webhook
+## 2. Authorize on the node (once, and again only if revoked or unused for 90 days)
 
-* **Slack**: <https://api.slack.com/apps> ▸ Create App ▸ *Incoming Webhooks* ▸ On ▸
-  *Add New Webhook to Workspace* ▸ pick the AV-ops channel ▸ copy `https://hooks.slack.com/services/…`.
-* **Microsoft Teams**: in the channel ▸ **Workflows** ▸ *Post to a channel when a webhook request
-  is received* ▸ copy the URL. zoom-control posts `{"text": "…"}`.
-
-## 4. Verify, then store
-
-From a checkout of zoom-control, with `zoomctl` installed in `ctl/.venv`:
+On the room Mac, **in the `av-runner` GUI session** (log in at the console or over Screen
+Sharing; the login keychain must be unlocked):
 
 ```zsh
-scripts/set-config-secrets.zsh --repo pubino/zoom-control-config --config ../zoom-control-config
+~/.zoomctl/venv/bin/zoomctl auth login --host orfetalks@princeton.edu
 ```
 
-The script prompts for each value without echoing it. It then runs
-`zoomctl check --test-alert` against your room files and stores the secrets with `gh secret set`
-**only if every check passes**. The expected output looks like:
+1. Enter the Client ID and Client Secret when prompted. The secret is not echoed.
+2. A browser opens the Zoom consent page. **Sign in as `orfetalks@princeton.edu`** (use a private
+   window if you're signed in to Zoom as yourself) and approve.
+3. `zoomctl` catches the redirect on 127.0.0.1 and exchanges the code (PKCE). It then calls
+   `GET /users/me`: **if the signed-in user isn't the `--host`, the token is revoked and nothing is
+   stored.**
+4. Tokens are saved in the keychain.
 
+Then check everything end to end:
+
+```zsh
+~/.zoomctl/venv/bin/zoomctl auth status
+~/.zoomctl/venv/bin/zoomctl check -c ~/zoom-control-config --test-alert   # or run the "Check Zoom setup" workflow
 ```
-✓ credentials: S2S OAuth token issued
-✓ host av-101@example.edu (room-101): webinar license (500 attendees)
-✓ host av-101@example.edu (room-101) webinars: list permitted
-✓ alert webhook accepted the test message
-✓ stored ZOOM_ACCOUNT_ID ZOOM_CLIENT_ID ZOOM_CLIENT_SECRET ALERT_WEBHOOK_URL in pubino/zoom-control-config
+
+## 3. Alert webhook (the only GitHub secret)
+
+* **Slack:** <https://api.slack.com/apps> ▸ Create App ▸ *Incoming Webhooks* ▸ On ▸
+  *Add New Webhook to Workspace* ▸ copy `https://hooks.slack.com/services/…`.
+* **Teams:** channel ▸ **Workflows** ▸ *Post to a channel when a webhook request is received*.
+
+```zsh
+gh secret set ALERT_WEBHOOK_URL -R pubino/zoom-control-config   # paste when prompted
 ```
 
-Replace the example `zoom_host` in `rooms/*.yaml` with your real host(s) **before** running this,
-or the host checks fail. To rotate one secret later: `--only ZOOM_CLIENT_SECRET`, which still
-needs the other Zoom values for verification, or add `--no-verify`.
+Then run **Check Zoom setup** from the config repo's Actions tab. It posts a test alert.
 
-Then re-run the failed **Reconcile** workflow (Actions ▸ Reconcile ▸ Re-run) or push a spec change.
+## How the tokens stay alive
+
+* Access tokens last about 1 hour. Refresh tokens are **single-use**: each refresh returns a new
+  one and invalidates the old one. An unused refresh token expires after **90 days**.
+* Every refresh happens under a file lock and is written to the keychain **before** the token is
+  used. So concurrent jobs on the node (a room event plus a reconcile) never waste the single-use
+  token.
+* The nightly **Reconcile** refreshes the token daily, so it never nears 90 days.
+  `zoomctl check` warns once a token hasn't rotated in 60 days.
+* If Zoom rejects the refresh token (revoked, expired, app changed), every job fails with a
+  critical alert that says exactly what to run: `zoomctl auth login --host …`. The room job checks
+  this **at dispatch time**, hours before the event, not at T-3.
+
+**One node per host.** Because refresh tokens are single-use, a host's authorization lives on
+exactly one node, the one running the `zoom-api` runner. Rooms on other Macs can't share it. If
+you add a second closet Mac, give it its own host account or ask to extend the design.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
-| `invalid_client` | wrong Client ID/Secret, or the app is not activated |
-| `Invalid access token, does not contain scopes:[…]` (4711) | add the listed scope, then re-activate if prompted |
-| `User does not exist` (1001) | `zoom_host` typo, or the user is in a different account |
-| `user is Basic (unlicensed)` | assign a Licensed seat plus a Webinar license |
-| Webhook HTTP 403/404 | the webhook was revoked or the URL was copied incompletely |
+| `you signed in as bino@princeton.edu, but --host is orfetalks@…` | Sign out of Zoom in the browser or use a private window, then sign in as the host |
+| `invalid_client` at login | wrong Client ID/Secret, or the app is disabled |
+| redirect page shows an error | Redirect URL / allow list doesn't exactly match `http://127.0.0.1:8765/zoom/callback` |
+| `does not contain scopes:[…]` (4711) | OIT must add that (user-level) scope; then re-run `auth login` |
+| `keychain read failed … unlocked` | Run in the av-runner GUI session, or check that auto-login is on |
+| `Zoom rejected the refresh token` | Re-run `zoomctl auth login --host …` on the node |
+| `user is Basic (unlicensed)` / `no Webinar license` | Ask OIT to assign a Licensed seat plus a Webinar license to the host |

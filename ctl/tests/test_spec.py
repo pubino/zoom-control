@@ -59,3 +59,34 @@ def test_marker_roundtrip_and_hash_sensitivity(config_dir):
     assert spec_hash(changed, room) != spec_hash(ev, room)
     assert parse_marker("no marker here") is None
     assert parse_marker(None) is None
+
+
+def _room(config_dir, rid, host):
+    (config_dir / "rooms" / f"{rid}.yaml").write_text(
+        (config_dir / "rooms" / "room-101.yaml").read_text()
+        .replace("id: room-101", f"id: {rid}").replace("runner_label: room-101", f"runner_label: {rid}")
+        .replace("host-room-101@example.edu", host))
+
+
+def test_same_host_cannot_run_two_rooms_at_once(config_dir):
+    _room(config_dir, "room-102", "host-room-101@example.edu")
+    write_event(config_dir, "parallel", datetime(2026, 9, 10, 18, 30, tzinfo=timezone.utc), room="room-102")
+    with pytest.raises(ConfigError) as exc:
+        load_config(config_dir)
+    assert exc.value.problems == ["host 'host-room-101@example.edu': events 'cs101-guest-2026-09-10' and "
+                                  "'parallel' overlap (including grace and preflight windows)"]
+
+
+def test_different_hosts_may_overlap_across_rooms(config_dir):
+    _room(config_dir, "room-102", "other-host@example.edu")
+    write_event(config_dir, "parallel", datetime(2026, 9, 10, 18, 30, tzinfo=timezone.utc), room="room-102")
+    assert len(load_config(config_dir).events) == 2
+
+
+def test_zoom_host_must_be_email_and_is_normalized(config_dir):
+    p = config_dir / "rooms" / "room-101.yaml"
+    p.write_text(p.read_text().replace("host-room-101@example.edu", "Host-Room-101@Example.edu"))
+    assert load_config(config_dir).rooms["room-101"].spec.zoom_host == "host-room-101@example.edu"
+    p.write_text(p.read_text().replace("Host-Room-101@Example.edu", "orfetalks"))
+    with pytest.raises(ConfigError, match="email"):
+        load_config(config_dir)

@@ -66,3 +66,22 @@ install_roomagent() {
   ok "roomagent $v installed"
   rm -rf "$tmp"
 }
+
+# Install zoomctl from the release wheel into ~RUNNER_USER/.zoomctl/venv for interactive use
+# on the node (`zoomctl auth login`, `zoomctl auth status`). CI jobs use their own pinned copy.
+install_zoomctl() {
+  local version="$1" v="${1#v}" home tmp
+  home="$(runner_home)"
+  tmp="$(mktemp -d)"
+  run gh release download "$version" -R "$PUBLIC_REPO" -p "zoomctl-$v-*.whl" -p SHA256SUMS -D "$tmp"
+  if [[ "$DRY_RUN" == 1 ]]; then rm -rf "$tmp"; return 0; fi
+  local whl=("$tmp"/zoomctl-$v-*.whl(N))
+  (( ${#whl} == 1 )) || die "release $version has no zoomctl wheel"
+  (cd "$tmp" && grep " ${whl[1]:t}\$" SHA256SUMS | shasum -a 256 -c -) || die "zoomctl wheel checksum mismatch"
+  chmod 755 "$tmp"; chmod 644 "$whl[1]"
+  as_runner "$(command -v python3.12)" -m venv "$home/.zoomctl/venv"
+  as_runner "$home/.zoomctl/venv/bin/pip" install -q --upgrade "$whl[1]"
+  [[ "$(sudo -u "$RUNNER_USER" "$home/.zoomctl/venv/bin/zoomctl" version)" == "$v" ]] || die "zoomctl did not install"
+  ok "zoomctl $v installed at $home/.zoomctl/venv/bin/zoomctl"
+  rm -rf "$tmp"
+}

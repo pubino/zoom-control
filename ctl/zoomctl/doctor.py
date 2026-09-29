@@ -1,13 +1,17 @@
-"""`zoomctl check`: verify Zoom credentials, scopes and every room host before going live."""
+"""`zoomctl check`: verify each room host's user-level authorization before going live."""
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .spec import Config
 from .zoom import ZoomClient, ZoomError
+from .zoom.tokens import TokenStore, normalize_host
 
 OK, WARN, FAIL = "ok", "warn", "fail"
+REFRESH_WARN_DAYS = 60  # Zoom expires a refresh token after 90 days unused
 
 
 @dataclass
@@ -28,37 +32,40 @@ def _zoom_message(exc: ZoomError) -> str:
     return f"{msg} (Zoom code {code})" if code else msg
 
 
-def check(cfg: Config, zoom: ZoomClient) -> list[Finding]:
-    findings: list[Finding] = []
-    try:
-        zoom._access_token(force=True)
-        findings.append(Finding(OK, "credentials", "S2S OAuth token issued"))
-    except ZoomError as exc:
-        findings.append(Finding(FAIL, "credentials", f"{_zoom_message(exc)} — check account/client id/secret "
-                                                     "and that the app is Activated"))
-        return findings
-
-    hosts = sorted({r.spec.zoom_host for r in cfg.rooms.values()})
+def check(cfg: Config, zoom_for: Callable[[str], ZoomClient], store: TokenStore,
+          clock: Callable[[], float] = time.time) -> list[Finding]:
+    findings: list[Finding] = [Finding(OK, "token store", store.describe())]
+    hosts = sorted({normalize_host(r.spec.zoom_host) for r in cfg.rooms.values()})
     for host in hosts:
-        rooms = ", ".join(sorted(r.id for r in cfg.rooms.values() if r.spec.zoom_host == host))
-        subject = f"host {host} ({rooms})"
+        rooms = ", ".join(sorted(r.id for r in cfg.rooms.values() if normalize_host(r.spec.zoom_host) == host))
+        subject = f"{host} ({rooms})"
         try:
-            user = zoom.get_user(host)
+            rec = store.load(host)
         except ZoomError as exc:
-            hint = " — missing user:read scope?" if exc.status in (400, 401, 403) else ""
-            findings.append(Finding(FAIL, subject, f"{_zoom_message(exc)}{hint}"))
+            findings.append(Finding(FAIL, subject, str(exc)))
             continue
-        if user.get("status") not in (None, "active"):
-            findings.append(Finding(FAIL, subject, f"user status is {user.get('status')!r}"))
+        if rec is None:
+            findings.append(Finding(FAIL, subject, f"not authorized on this node — run: zoomctl auth login --host {host}"))
             continue
+        zoom = zoom_for(host)
+        try:
+            user = zoom.verify_identity()  # also exercises refresh
+        except ZoomError as exc:
+            findings.append(Finding(FAIL, subject, _zoom_message(exc)))
+            continue
+        findings.append(Finding(OK, subject, f"authorized as {user.get('email')}"))
+        rec = store.load(host) or rec
+        age = (clock() - rec.refreshed_at) / 86400 if rec.refreshed_at else 0
+        if age > REFRESH_WARN_DAYS:
+            findings.append(Finding(WARN, f"{subject} refresh token", f"unrotated for {age:.0f} days (expires at 90)"))
         if user.get("type") == 1:
             findings.append(Finding(FAIL, subject, "user is Basic (unlicensed); webinars need a licensed host"))
             continue
         try:
-            feature = (zoom.get_user_settings(host) or {}).get("feature", {})
+            feature = (zoom.settings() or {}).get("feature", {})
         except ZoomError as exc:
-            findings.append(Finding(WARN, subject, f"cannot read settings ({_zoom_message(exc)}); "
-                                                   "webinar license not verified"))
+            findings.append(Finding(WARN, subject, f"cannot read settings ({_zoom_message(exc)}) — "
+                                                   "add user:read:settings scope? license not verified"))
         else:
             if feature.get("webinar") is True:
                 cap = feature.get("webinar_capacity")
@@ -69,8 +76,12 @@ def check(cfg: Config, zoom: ZoomClient) -> list[Finding]:
             else:
                 findings.append(Finding(WARN, subject, "settings do not report a webinar feature flag"))
         try:
-            next(iter(zoom.list_webinars(host)), None)
+            next(iter(zoom.list_webinars()), None)
             findings.append(Finding(OK, f"{subject} webinars", "list permitted"))
         except ZoomError as exc:
             findings.append(Finding(FAIL, f"{subject} webinars", f"{_zoom_message(exc)} — missing webinar scopes?"))
+    extra = sorted(set(store.hosts()) - set(hosts))
+    if extra:
+        findings.append(Finding(WARN, "token store", f"authorizations for hosts not in config: {', '.join(extra)} "
+                                                     "(zoomctl auth logout --host …)"))
     return findings

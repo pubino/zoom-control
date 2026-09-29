@@ -86,23 +86,22 @@ By default the host `start_url` is converted to `zoommtg://…/start?confno=…&
 directly in zoom.us, so no browser prompt appears. Verify it on this node:
 
 1. Leave any meeting and quit Zoom.
-2. Get a fresh start URL for a test webinar (it expires within about 2 hours). Use Zoom web ▸
-   Webinars ▸ your test webinar ▸ *Start*, and copy the link from the browser, or run on a machine
-   with the Zoom secrets:
+2. Create a test event in the config repo (a few days out), merge it so Reconcile creates the
+   webinar, and pull the repo onto the node.
+3. Launch it with a fresh start URL, piped straight in so the host token never reaches the screen:
    ```zsh
-   python -c 'from zoomctl.zoom import *; print(ZoomClient(Credentials.from_env()).fresh_start_url(WEBINAR_ID))'
-   ```
-3. Launch it:
-   ```zsh
-   pbpaste | roomagent launch --start-url-stdin --mode zoommtg --pretty
+   ~/.zoomctl/venv/bin/zoomctl start-url -c ~/zoom-control-config -e <test-uid> \
+     | roomagent launch --start-url-stdin --mode zoommtg --pretty
    ```
    Expect `zoom_running: ok` and `in_meeting: ok` with no dialog on screen.
 4. If it hangs on a dialog or `in_meeting` fails, try the fallback:
    ```zsh
-   roomagent quit --force; pbpaste | roomagent launch --start-url-stdin --mode https --pretty
+   roomagent quit --force
+   ~/.zoomctl/venv/bin/zoomctl start-url -c ~/zoom-control-config -e <test-uid> \
+     | roomagent launch --start-url-stdin --mode https --pretty
    ```
    If that works, set `launch_mode: https` under `spec:` in this room's YAML in the config repo.
-5. End the test webinar: `roomagent quit` (or `zoomctl end`).
+5. End the test webinar: `zoomctl end -c ~/zoom-control-config -e <test-uid>`, then `roomagent quit`.
 
 ## 4. Zoom client preferences
 

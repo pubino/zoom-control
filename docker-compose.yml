@@ -6,10 +6,14 @@ services:
   zoomctl:
     build: { context: ., target: zoomctl }
     environment:
-      - ZOOM_ACCOUNT_ID
-      - ZOOM_CLIENT_ID
-      - ZOOM_CLIENT_SECRET
       - ALERT_WEBHOOK_URL
+      - ZOOMCTL_TOKEN_STORE=file:/tokens
+    # Tokens from `zoomctl auth login` run in this container (FileTokenStore). On room nodes the
+    # macOS keychain is used instead.
     volumes:
       - ${ZOOMCTL_CONFIG:-./examples/config}:/config:ro
+      - zoomctl-tokens:/tokens
     working_dir: /config
+
+volumes:
+  zoomctl-tokens:
