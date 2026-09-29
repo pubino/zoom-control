@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 # Provision a closet Mac mini as a zoom-control room node.
 #
-#   sudo -v && ./bootstrap.zsh --room room-101 --config-repo pubino/zoom-control-config --version v0.1.1 --api-runner
+#   sudo -v && ./bootstrap.zsh --room room-101 --config-repo pu-shd/zoom-control-config --version v0.1.1 --api-runner
 #
 # --api-runner also registers a second runner (label zoom-api) on this node for jobs that call
 # the Zoom API (plan, reconcile, check, manual end). Use it on the node where the host account

@@ -1,7 +1,7 @@
 # Shared helpers for node scripts. Source, don't execute.
 set -euo pipefail
 
-: "${PUBLIC_REPO:=pubino/zoom-control}"
+: "${PUBLIC_REPO:=pu-shd/zoom-control}"
 : "${RUNNER_USER:=av-runner}"
 : "${DRY_RUN:=0}"
 

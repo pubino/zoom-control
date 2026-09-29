@@ -20,7 +20,7 @@ jobs:
     runs-on: [self-hosted, macOS, zoom-api]
     steps:
       - uses: actions/checkout@v5
-      - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
+      - uses: pu-shd/zoom-control/.github/actions/setup-zoomctl@v0.1.0
       - name: Apply specs to Zoom
         env:
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}

@@ -13,5 +13,5 @@ jobs:
     runs-on: [self-hosted, macOS, zoom-api]
     steps:
       - uses: actions/checkout@v5
-      - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
+      - uses: pu-shd/zoom-control/.github/actions/setup-zoomctl@v0.1.0
       - run: zoomctl end -c . --event "${{ inputs.event }}"

@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 # Decommission a room node: unregister the runner, remove roomagent, optionally delete the user.
 #
-#   ./teardown.zsh --config-repo pubino/zoom-control-config [--delete-user] [--keep-power-settings]
+#   ./teardown.zsh --config-repo pu-shd/zoom-control-config [--delete-user] [--keep-power-settings]
 source "${0:A:h}/lib.zsh"
 
 config_repo="" delete_user=0 keep_power=0

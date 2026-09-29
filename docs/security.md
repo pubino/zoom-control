@@ -7,7 +7,7 @@
 * **Private `zoom-control-config`**: room and event YAML, secrets, and the only place room runners
   are registered (repo-scoped). Disable "Run workflows from fork pull requests" and require review
   on `main`.
-* The config repo pins `pubino/zoom-control/.github/actions/setup-zoomctl@<tag>`, so a change in the
+* The config repo pins `pu-shd/zoom-control/.github/actions/setup-zoomctl@<tag>`, so a change in the
   public repo only takes effect after a reviewed bump (Dependabot opens it). For maximum assurance,
   pin a commit SHA instead of a tag.
 

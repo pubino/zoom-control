@@ -113,7 +113,7 @@ zoomctl + roomagent v$version
 
 - $pkg_note
 - PPPC code requirement: \`$requirement\`
-- Config repo pin: \`pubino/zoom-control/.github/actions/setup-zoomctl@v$version\`
+- Config repo pin: \`pu-shd/zoom-control/.github/actions/setup-zoomctl@v$version\`
 - Node upgrade: \`node/update.zsh --version v$version\`
 NOTES
 )"
@@ -126,7 +126,7 @@ if [[ -n "$config_repo" ]]; then
   branch="bump-zoom-control-v$version"
   git -C "$config_repo" fetch -q origin main
   git -C "$config_repo" switch -q -c "$branch" origin/main
-  sed -i '' -E "s#(pubino/zoom-control/\.github/actions/setup-zoomctl@)v[0-9]+\.[0-9]+\.[0-9]+#\1v$version#" \
+  sed -i '' -E "s#(pu-shd/zoom-control/\.github/actions/setup-zoomctl@)v[0-9]+\.[0-9]+\.[0-9]+#\1v$version#" \
     "$config_repo"/.github/workflows/*.yml
   git -C "$config_repo" add .github/workflows
   git -C "$config_repo" commit -qm "Bump zoom-control to v$version"

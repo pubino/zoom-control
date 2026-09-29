@@ -76,7 +76,7 @@ Then check everything end to end:
 * **Teams:** channel ▸ **Workflows** ▸ *Post to a channel when a webhook request is received*.
 
 ```zsh
-gh secret set ALERT_WEBHOOK_URL -R pubino/zoom-control-config   # paste when prompted
+gh secret set ALERT_WEBHOOK_URL -R pu-shd/zoom-control-config   # paste when prompted
 ```
 
 Then run **Check Zoom setup** from the config repo's Actions tab. It posts a test alert.

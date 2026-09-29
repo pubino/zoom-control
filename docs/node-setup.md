@@ -13,9 +13,9 @@ gh auth login            # account with admin on the private config repo
 ## 2. Bootstrap
 
 ```zsh
-git clone https://github.com/pubino/zoom-control && cd zoom-control/node
-DRY_RUN=1 ./bootstrap.zsh --room room-101 --config-repo pubino/zoom-control-config --version v0.1.1 --api-runner
-./bootstrap.zsh          --room room-101 --config-repo pubino/zoom-control-config --version v0.1.1 --api-runner
+git clone https://github.com/pu-shd/zoom-control && cd zoom-control/node
+DRY_RUN=1 ./bootstrap.zsh --room room-101 --config-repo pu-shd/zoom-control-config --version v0.1.1 --api-runner
+./bootstrap.zsh          --room room-101 --config-repo pu-shd/zoom-control-config --version v0.1.1 --api-runner
 ```
 
 This creates the standard user `av-runner`, disables sleep, enables auto-restart after power loss plus
@@ -72,7 +72,7 @@ the webinar ends via the API at end + grace.
 
 ```zsh
 ./update.zsh --version v0.2.0                                   # between events only
-./teardown.zsh --config-repo pubino/zoom-control-config [--delete-user]
+./teardown.zsh --config-repo pu-shd/zoom-control-config [--delete-user]
 ```
 
 ## FileVault
