@@ -1,0 +1,29 @@
+name: Reconcile
+on:
+  push:
+    branches: [main]
+    paths: ["rooms/**", "events/**"]
+  schedule:
+    - cron: "17 6 * * *"   # nightly drift repair
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reconcile
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
+      - name: Apply specs to Zoom
+        env:
+          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
+          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
+          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: zoomctl apply -c .

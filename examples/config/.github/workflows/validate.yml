@@ -1,0 +1,28 @@
+name: Validate
+on:
+  pull_request:
+    paths: ["rooms/**", "events/**", ".github/workflows/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest   # GitHub-hosted: PRs never run on room hardware
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
+      - run: zoomctl validate -c .
+      - name: Plan against Zoom
+        env:
+          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
+          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
+          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+        run: zoomctl plan -c . --markdown plan.md
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --body-file plan.md --edit-last --create-if-none

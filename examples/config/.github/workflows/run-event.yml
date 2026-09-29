@@ -1,0 +1,37 @@
+name: Run event
+run-name: ${{ inputs.run_key }}   # dedup key used by the dispatcher — do not change
+on:
+  workflow_dispatch:
+    inputs:
+      event: { description: Event uid, required: true }
+      room: { description: Runner label of the room node, required: true }
+      run_key: { description: "event-<uid>-<start> (set by dispatcher)", required: true }
+
+permissions:
+  contents: read
+
+# No `concurrency:` group on purpose: GitHub cancels older *pending* runs in a group,
+# which would silently drop queued events. A self-hosted runner already runs one job at a time.
+
+jobs:
+  run:
+    runs-on: [self-hosted, macOS, "${{ inputs.room }}"]
+    environment: ${{ inputs.room }}
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
+        with:
+          require-roomagent: "true"
+      - name: Event lifecycle (waits for T-15, preflight, live, monitor, teardown)
+        env:
+          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
+          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
+          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        # ZOOMCTL_ROOM comes from the runner's .env (node/bootstrap.zsh) so a node refuses
+        # events addressed to another room even if labels are misconfigured.
+        run: zoomctl node run-event -c . --event "${{ inputs.event }}"
+      - name: Reset room on failure or cancel
+        if: failure() || cancelled()
+        run: roomagent quit --force || true

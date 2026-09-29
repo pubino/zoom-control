@@ -1,0 +1,31 @@
+name: Manual start (runbook)
+on:
+  workflow_dispatch:
+    inputs:
+      event: { description: Event uid, required: true }
+      room: { description: Runner label of the room node, required: true }
+
+permissions:
+  contents: read
+
+# No `concurrency:` group on purpose: GitHub cancels older *pending* runs in a group,
+# which would silently drop queued events. A self-hosted runner already runs one job at a time.
+
+jobs:
+  start:
+    runs-on: [self-hosted, macOS, "${{ inputs.room }}"]
+    environment: ${{ inputs.room }}
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
+        with:
+          require-roomagent: "true"
+      - env:
+          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
+          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
+          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: zoomctl node run-event -c . --event "${{ inputs.event }}" --immediate
+      - if: failure() || cancelled()
+        run: roomagent quit --force || true

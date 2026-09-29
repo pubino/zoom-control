@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PPPC template for zoom-control room nodes. Deploy via MDM (user-approved / supervised).
+  Replace TEAMID_PLACEHOLDER with your Developer ID team (agent/scripts/notarize.zsh prints the
+  exact code requirement) and RUNNER_HOME_PLACEHOLDER with the av-runner home directory.
+
+  Apple limits what PPPC can do:
+    * Accessibility          → can be ALLOWED here.
+    * ScreenCapture          → can only be delegated to a standard user
+                               (AllowStandardUserToSetSystemService); approve once as av-runner.
+    * Camera / Microphone    → cannot be pre-approved by any profile; approve once as av-runner.
+  See docs/security.md.
+-->
+<plist version="1.0">
+<dict>
+  <key>PayloadDisplayName</key><string>zoom-control room node privacy</string>
+  <key>PayloadIdentifier</key><string>us.zoomcontrol.pppc</string>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadUUID</key><string>7B6C2E8A-4F7D-4E0B-9A7E-2C1F3D5A6B70</string>
+  <key>PayloadVersion</key><integer>1</integer>
+  <key>PayloadScope</key><string>System</string>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key><string>com.apple.TCC.configuration-profile-policy</string>
+      <key>PayloadIdentifier</key><string>us.zoomcontrol.pppc.tcc</string>
+      <key>PayloadUUID</key><string>1D0F3C5E-7A2B-4C9D-8E6F-0A1B2C3D4E51</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>Services</key>
+      <dict>
+        <key>Accessibility</key>
+        <array>
+          <dict>
+            <key>Identifier</key><string>/usr/local/bin/roomagent</string>
+            <key>IdentifierType</key><string>path</string>
+            <key>CodeRequirement</key>
+            <string>identifier "us.zoomcontrol.roomagent" and anchor apple generic and certificate leaf[subject.OU] = "TEAMID_PLACEHOLDER"</string>
+            <key>Authorization</key><string>Allow</string>
+            <key>StaticCode</key><false/>
+          </dict>
+          <dict>
+            <!-- TCC may attribute UI scripting to the runner (the responsible process). -->
+            <key>Identifier</key><string>RUNNER_HOME_PLACEHOLDER/actions-runner/bin/Runner.Listener</string>
+            <key>IdentifierType</key><string>path</string>
+            <key>CodeRequirement</key><string>identifier "Runner.Listener"</string>
+            <key>Authorization</key><string>Allow</string>
+            <key>StaticCode</key><false/>
+          </dict>
+        </array>
+        <key>ScreenCapture</key>
+        <array>
+          <dict>
+            <key>Identifier</key><string>/usr/local/bin/roomagent</string>
+            <key>IdentifierType</key><string>path</string>
+            <key>CodeRequirement</key>
+            <string>identifier "us.zoomcontrol.roomagent" and anchor apple generic and certificate leaf[subject.OU] = "TEAMID_PLACEHOLDER"</string>
+            <key>Authorization</key><string>AllowStandardUserToSetSystemService</string>
+          </dict>
+          <dict>
+            <key>Identifier</key><string>us.zoom.xos</string>
+            <key>IdentifierType</key><string>bundleID</string>
+            <key>CodeRequirement</key>
+            <string>identifier "us.zoom.xos" and anchor apple generic and certificate leaf[subject.OU] = BJ4HAAB9B3</string>
+            <key>Authorization</key><string>AllowStandardUserToSetSystemService</string>
+          </dict>
+        </array>
+      </dict>
+    </dict>
+    <dict>
+      <!-- macOS 15+: suppress the periodic "continue to allow screen recording?" re-prompt
+           (supervised devices only). Remove if your MDM does not support it. -->
+      <key>PayloadType</key><string>com.apple.applicationaccess</string>
+      <key>PayloadIdentifier</key><string>us.zoomcontrol.pppc.restrictions</string>
+      <key>PayloadUUID</key><string>5E2A9B7C-3D1F-4A6E-8B0C-9F8E7D6C5B42</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>forceBypassScreenCaptureAlert</key><true/>
+    </dict>
+  </array>
+</dict>
+</plist>

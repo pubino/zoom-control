@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "AVRouting": {
+      "additionalProperties": false,
+      "properties": {
+        "audio_device": {
+          "description": "Audio input device name as reported by CoreAudio",
+          "title": "Audio Device",
+          "type": "string"
+        },
+        "share_display": {
+          "description": "Display name (NSScreen.localizedName) to screen-share",
+          "title": "Share Display",
+          "type": "string"
+        },
+        "video_device": {
+          "description": "Capture device name as reported by AVFoundation",
+          "title": "Video Device",
+          "type": "string"
+        }
+      },
+      "required": [
+        "video_device",
+        "audio_device",
+        "share_display"
+      ],
+      "title": "AVRouting",
+      "type": "object"
+    },
+    "RoomMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RoomMeta",
+      "type": "object"
+    },
+    "RoomSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "av": {
+          "$ref": "#/$defs/AVRouting"
+        },
+        "runner_label": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "title": "Runner Label",
+          "type": "string"
+        },
+        "thresholds": {
+          "$ref": "#/$defs/Thresholds",
+          "default": {
+            "black_frame_luma": 0.02,
+            "min_audio_dbfs": -70.0,
+            "min_video_fps": 1.0
+          }
+        },
+        "timezone": {
+          "default": "America/New_York",
+          "title": "Timezone",
+          "type": "string"
+        },
+        "zoom_host": {
+          "description": "Zoom user (email or id) that hosts this room's webinars",
+          "title": "Zoom Host",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runner_label",
+        "zoom_host",
+        "av"
+      ],
+      "title": "RoomSpec",
+      "type": "object"
+    },
+    "Thresholds": {
+      "additionalProperties": false,
+      "properties": {
+        "black_frame_luma": {
+          "default": 0.02,
+          "description": "Mean luma at or below is 'black'",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Black Frame Luma",
+          "type": "number"
+        },
+        "min_audio_dbfs": {
+          "default": -70.0,
+          "description": "RMS floor; quieter is 'silent'",
+          "maximum": 0,
+          "title": "Min Audio Dbfs",
+          "type": "number"
+        },
+        "min_video_fps": {
+          "default": 1.0,
+          "minimum": 0,
+          "title": "Min Video Fps",
+          "type": "number"
+        }
+      },
+      "title": "Thresholds",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "zoomcontrol/v1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Room",
+      "title": "Kind",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/RoomMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/RoomSpec"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Room",
+  "type": "object"
+}

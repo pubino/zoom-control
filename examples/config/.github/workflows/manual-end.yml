@@ -1,0 +1,20 @@
+name: Manual end (runbook)
+on:
+  workflow_dispatch:
+    inputs:
+      event: { description: Event uid, required: true }
+
+permissions:
+  contents: read
+
+jobs:
+  end:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
+      - env:
+          ZOOM_ACCOUNT_ID: ${{ secrets.ZOOM_ACCOUNT_ID }}
+          ZOOM_CLIENT_ID: ${{ secrets.ZOOM_CLIENT_ID }}
+          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+        run: zoomctl end -c . --event "${{ inputs.event }}"

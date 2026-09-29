@@ -1,0 +1,23 @@
+# Agent/local instructions — never committed
+CLAUDE.md
+.claude/
+plan.txt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+dist/
+build/
+
+# Swift
+agent/.build/
+agent/.swiftpm/
+*.xcodeproj/
+DerivedData/
+
+# macOS
+.DS_Store

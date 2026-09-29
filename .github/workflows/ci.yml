@@ -1,0 +1,70 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# GitHub-hosted runners only. This public repo must never target self-hosted runners.
+jobs:
+  python:
+    name: zoomctl tests (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build test
+      - run: docker compose run --rm test
+
+  swift-linux:
+    name: RoomAgentCore tests (Linux, Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build test-swift
+      - run: docker compose run --rm test-swift
+
+  swift-macos:
+    name: roomagent build + tests (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: agent/scripts/test.zsh
+      - run: agent/scripts/build.zsh release
+      - name: CLI contract smoke test
+        run: |
+          set -euo pipefail
+          bin="$(agent/scripts/build.zsh debug | tail -1)"
+          set +e
+          echo "https://zoom.us/j/1" | "$bin" launch --start-url-stdin > out.json
+          code=$?
+          set -e
+          cat out.json
+          [[ $code -eq 2 ]] || { echo "expected exit 2, got $code"; exit 1; }
+          python3 -c 'import json,sys; d=json.load(open("out.json")); assert d["status"]=="fail" and d["checks"][0]["name"]=="start_url", d'
+
+  setup-action:
+    name: setup-zoomctl action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: setup
+        uses: ./.github/actions/setup-zoomctl
+      - run: |
+          test "${{ steps.setup.outputs.version }}" = "$(zoomctl version)"
+          zoomctl validate -c examples/config
+          zoomctl dispatch --help >/dev/null
+
+  lint-scripts:
+    name: zsh syntax
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: for f in agent/scripts/*.zsh node/*.zsh scripts/*.zsh; do zsh -n "$f" && echo "ok $f"; done
+      - run: plutil -lint mdm/*.mobileconfig mdm/*.plist

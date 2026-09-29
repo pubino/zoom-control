@@ -1,0 +1,224 @@
+{
+  "$defs": {
+    "EventMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "uid": {
+          "description": "Stable identity; never reuse",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "title": "Uid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uid",
+        "name"
+      ],
+      "title": "EventMeta",
+      "type": "object"
+    },
+    "EventSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "agenda": {
+          "default": "",
+          "maxLength": 1500,
+          "title": "Agenda",
+          "type": "string"
+        },
+        "duration_minutes": {
+          "maximum": 1440,
+          "minimum": 5,
+          "title": "Duration Minutes",
+          "type": "integer"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle",
+          "default": {
+            "grace_minutes": 10,
+            "max_recoveries": 3,
+            "monitor_interval_seconds": 15,
+            "preflight_minutes": 15,
+            "start_url_minutes": 3
+          }
+        },
+        "password": {
+          "anyOf": [
+            {
+              "maxLength": 10,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Password"
+        },
+        "room": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "title": "Room",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/WebinarSettings",
+          "default": {
+            "approval_type": 2,
+            "auto_recording": "none",
+            "extra": {},
+            "hd_video": true,
+            "host_video": true,
+            "on_demand": false,
+            "panelists_video": true,
+            "practice_session": false
+          }
+        },
+        "start_time": {
+          "format": "date-time",
+          "title": "Start Time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "room",
+        "start_time",
+        "duration_minutes"
+      ],
+      "title": "EventSpec",
+      "type": "object"
+    },
+    "Lifecycle": {
+      "additionalProperties": false,
+      "properties": {
+        "grace_minutes": {
+          "default": 10,
+          "maximum": 240,
+          "minimum": 0,
+          "title": "Grace Minutes",
+          "type": "integer"
+        },
+        "max_recoveries": {
+          "default": 3,
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Max Recoveries",
+          "type": "integer"
+        },
+        "monitor_interval_seconds": {
+          "default": 15,
+          "maximum": 300,
+          "minimum": 5,
+          "title": "Monitor Interval Seconds",
+          "type": "integer"
+        },
+        "preflight_minutes": {
+          "default": 15,
+          "maximum": 120,
+          "minimum": 1,
+          "title": "Preflight Minutes",
+          "type": "integer"
+        },
+        "start_url_minutes": {
+          "default": 3,
+          "maximum": 60,
+          "minimum": 0,
+          "title": "Start Url Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "Lifecycle",
+      "type": "object"
+    },
+    "WebinarSettings": {
+      "additionalProperties": false,
+      "description": "Subset of Zoom webinar settings we manage. `extra` is passed through verbatim.",
+      "properties": {
+        "approval_type": {
+          "default": 2,
+          "enum": [
+            0,
+            1,
+            2
+          ],
+          "title": "Approval Type",
+          "type": "integer"
+        },
+        "auto_recording": {
+          "default": "none",
+          "enum": [
+            "local",
+            "cloud",
+            "none"
+          ],
+          "title": "Auto Recording",
+          "type": "string"
+        },
+        "extra": {
+          "additionalProperties": true,
+          "title": "Extra",
+          "type": "object"
+        },
+        "hd_video": {
+          "default": true,
+          "title": "Hd Video",
+          "type": "boolean"
+        },
+        "host_video": {
+          "default": true,
+          "title": "Host Video",
+          "type": "boolean"
+        },
+        "on_demand": {
+          "default": false,
+          "title": "On Demand",
+          "type": "boolean"
+        },
+        "panelists_video": {
+          "default": true,
+          "title": "Panelists Video",
+          "type": "boolean"
+        },
+        "practice_session": {
+          "default": false,
+          "title": "Practice Session",
+          "type": "boolean"
+        }
+      },
+      "title": "WebinarSettings",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "zoomcontrol/v1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "kind": {
+      "const": "ZoomWebinar",
+      "title": "Kind",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/EventMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/EventSpec"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "Event",
+  "type": "object"
+}

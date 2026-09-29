@@ -1,0 +1,28 @@
+name: Dispatch
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # best-effort; 3h lookahead absorbs late or skipped ticks (~2.9k billed min/month)
+  push:
+    branches: [main]
+    paths: ["events/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write   # gh workflow run / gh run list
+
+concurrency:
+  group: dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pubino/zoom-control/.github/actions/setup-zoomctl@v0.1.0
+      - name: Dispatch room jobs and watchdog missed starts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: zoomctl dispatch -c . --lookahead 180 --workflow run-event.yml

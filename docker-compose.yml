@@ -1,0 +1,15 @@
+services:
+  test:
+    build: { context: ., target: python-test }
+  test-swift:
+    build: { context: ., target: swift-test }
+  zoomctl:
+    build: { context: ., target: zoomctl }
+    environment:
+      - ZOOM_ACCOUNT_ID
+      - ZOOM_CLIENT_ID
+      - ZOOM_CLIENT_SECRET
+      - ALERT_WEBHOOK_URL
+    volumes:
+      - ${ZOOMCTL_CONFIG:-./examples/config}:/config:ro
+    working_dir: /config

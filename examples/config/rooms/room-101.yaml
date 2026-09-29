@@ -1,0 +1,17 @@
+apiVersion: zoomcontrol/v1
+kind: Room
+metadata:
+  id: room-101
+  description: "Example lecture hall (fake data)"
+spec:
+  runner_label: room-101
+  timezone: America/New_York
+  zoom_host: host-room-101@example.edu
+  av:
+    video_device: "Blackmagic UltraStudio Mini"   # podium camera capture
+    audio_device: "Dante Virtual Soundcard"       # room mic matrix
+    share_display: "Display 2"                    # podium display (NSScreen.localizedName)
+  thresholds:
+    min_video_fps: 1
+    min_audio_dbfs: -70
+    black_frame_luma: 0.02

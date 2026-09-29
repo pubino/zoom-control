@@ -1,0 +1,54 @@
+name: Setup zoomctl
+description: >
+  Install zoomctl from this exact ref of zoom-control into a cached venv and put it on PATH.
+  Works on GitHub-hosted runners and on self-hosted macOS room nodes. Pin the ref (tag or SHA)
+  in the caller so code and config move together.
+inputs:
+  python-version:
+    description: Python version for GitHub-hosted runners (self-hosted nodes use their python3.12)
+    default: "3.12"
+  require-roomagent:
+    description: Fail unless a roomagent binary is installed on this runner
+    default: "false"
+outputs:
+  version:
+    description: Installed zoomctl version
+    value: ${{ steps.install.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - if: runner.environment == 'github-hosted'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - id: install
+      shell: bash
+      env:
+        ACTION_REF: ${{ github.action_ref }}
+      run: |
+        set -euo pipefail
+        repo_root="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        py="$(command -v python3.12 || command -v python3)"
+        "$py" -c 'import sys; assert sys.version_info >= (3, 12), sys.version' \
+          || { echo "::error::zoomctl needs Python >= 3.12 ($py)"; exit 1; }
+        key="$(cd "$repo_root" && (git rev-parse HEAD 2>/dev/null || echo "${ACTION_REF:-local}"))"
+        venv="${RUNNER_TOOL_CACHE:-$HOME/.cache}/zoomctl/${key}"
+        if [[ ! -x "$venv/bin/zoomctl" ]]; then
+          "$py" -m venv "$venv"
+          "$venv/bin/pip" install --quiet --disable-pip-version-check "$repo_root/ctl"
+        fi
+        echo "$venv/bin" >> "$GITHUB_PATH"
+        version="$("$venv/bin/zoomctl" version)"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "zoomctl $version installed at $venv"
+
+    - if: inputs.require-roomagent == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        bin="${ROOMAGENT:-$(command -v roomagent || echo /usr/local/bin/roomagent)}"
+        [[ -x "$bin" ]] || { echo "::error::roomagent not installed on this node (run node/update.zsh)"; exit 1; }
+        echo "roomagent $("$bin" --version) at $bin"
+        codesign --verify --strict "$bin" 2>/dev/null \
+          || echo "::warning::roomagent is not validly signed; TCC grants may not apply"

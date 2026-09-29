@@ -1,0 +1,81 @@
+name: Release
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    # Signing secrets live in the protected `release` environment (tag pushes only).
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches versions
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          grep -q "^version = \"$tag\"" ctl/pyproject.toml || { echo "::error::ctl/pyproject.toml version != $tag"; exit 1; }
+          grep -q "roomAgentVersion = \"$tag\"" agent/Sources/RoomAgentCore/Report.swift \
+            || { echo "::error::roomAgentVersion != $tag"; exit 1; }
+
+      - run: agent/scripts/test.zsh
+
+      - name: Import signing certificates
+        id: certs
+        env:
+          CERT_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CERT_P12_BASE64}" ]]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No signing secrets — publishing an UNSIGNED pkg (not for room nodes)"
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/signing.keychain-db"; pw="$(uuidgen)"
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -k "$kc" -T /usr/bin/codesign -T /usr/bin/pkgbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pw" "$kc"
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build, sign, notarize
+        if: steps.certs.outputs.signed == 'true'
+        env:
+          DEVELOPER_ID_APP: ${{ secrets.DEVELOPER_ID_APP }}
+          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          OUT: ${{ github.workspace }}/dist
+        run: agent/scripts/notarize.zsh
+
+      - name: Build unsigned
+        if: steps.certs.outputs.signed != 'true'
+        env:
+          OUT: ${{ github.workspace }}/dist
+        run: agent/scripts/package-unsigned.zsh
+
+      - name: Build zoomctl wheel
+        run: |
+          python3 -m pip install --quiet build
+          python3 -m build --wheel --outdir dist ctl
+
+      - name: Checksums
+        run: cd dist && shasum -a 256 * > SHA256SUMS && cat SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="zoomctl + roomagent ${GITHUB_REF_NAME}."
+          [[ "${{ steps.certs.outputs.signed }}" == "true" ]] || notes+=$'\n\n⚠️ roomagent pkg is UNSIGNED — do not deploy to room nodes.'
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes "$notes" --verify-tag

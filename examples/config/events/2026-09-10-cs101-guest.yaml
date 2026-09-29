@@ -1,0 +1,20 @@
+apiVersion: zoomcontrol/v1
+kind: ZoomWebinar
+metadata:
+  uid: cs101-guest-2026-09-10
+  name: "CS101 Guest Lecture"
+spec:
+  room: room-101
+  start_time: "2026-09-10T14:00:00-04:00"
+  duration_minutes: 60
+  agenda: "Guest lecture streamed from Room 101."
+  settings:
+    host_video: true
+    panelists_video: true
+    practice_session: false
+    auto_recording: cloud
+  lifecycle:
+    preflight_minutes: 15
+    start_url_minutes: 3
+    grace_minutes: 10
+    max_recoveries: 3
